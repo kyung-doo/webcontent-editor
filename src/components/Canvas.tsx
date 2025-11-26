@@ -2,6 +2,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { selectElement } from '../store/editorSlice';
 
+
 export default function Canvas() {
   const { elements, selectedId } = useSelector((state: RootState) => state.editor);
   const dispatch = useDispatch();
