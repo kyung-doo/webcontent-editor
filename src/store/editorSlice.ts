@@ -10,6 +10,9 @@ export interface EditorElement {
     [key: string]: any;
   };
   scripts?: string[];
+  scriptValues?: { 
+    [scriptName: string]: { [fieldName: string]: any } 
+  };
 }
 
 interface CanvasSettings {
@@ -25,6 +28,7 @@ interface EditorState {
   elements: EditorElement[];
   selectedId: string | null;
   canvasSettings: CanvasSettings;
+  
 }
 
 const initialState: EditorState = {
@@ -80,6 +84,18 @@ export const editorSlice = createSlice({
       }
     },
 
+    // 스크립트 변수값 업데이트 리듀서
+    updateScriptValue: (state, action: PayloadAction<{ id: string, scriptName: string, fieldName: string, value: any }>) => {
+      const el = state.elements.find(e => e.id === action.payload.id);
+      if (el) {
+        if (!el.scriptValues) el.scriptValues = {};
+        if (!el.scriptValues[action.payload.scriptName]) el.scriptValues[action.payload.scriptName] = {};
+        
+        // 값 저장
+        el.scriptValues[action.payload.scriptName][action.payload.fieldName] = action.payload.value;
+      }
+    },
+
     // 캔버스 설정 변경 리듀서
     updateCanvasSettings: (state, action: PayloadAction<Partial<CanvasSettings>>) => {
       if (action.payload.zoom) {
@@ -105,7 +121,8 @@ export const {
   addScriptToElement,
   removeScriptFromElement,
   updateCanvasSettings,
-  setInitialState
+  setInitialState,
+  updateScriptValue
 } = editorSlice.actions;
 
 export default editorSlice.reducer;

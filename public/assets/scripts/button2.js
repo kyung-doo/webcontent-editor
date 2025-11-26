@@ -1,14 +1,22 @@
-// Unity의 Start(), Update(), OnClick()과 유사
 export default {
-  // 컴포넌트가 처음 부착되거나 로드될 때 실행 (Start)
-  onStart: (element, props) => {
-    console.log('Component Started on:', element.id);
-    element.style.transition = 'all 0.3s';
+  // 에디터 노출 변수
+  fields: {
+    
   },
 
-  // 클릭 이벤트가 발생했을 때 실행 (OnClick)
-  onClick: (element, props) => {
-    alert(`클릭됨! ID: ${element.id}`);
-    element.style.backgroundColor = 'red';
+
+  // 1. 시작 (초기화)
+  onStart (el, props, fields) {
+    console.log('Script Started', props);
+  },
+
+  // 2. 매 프레임 업데이트 (deltaTime: 초 단위 경과 시간)
+  onUpdate (el, props, fields, deltaTime) {
+    
+  },
+
+  // 3. 파괴 (정리)
+  onDestroy (el, props, fields) {
+    console.log('Script Destroyed');
   }
 }
