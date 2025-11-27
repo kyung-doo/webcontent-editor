@@ -1,8 +1,33 @@
 export default {
   // 에디터 노출 변수
   fields: {
-    speed: { type: 'number', default: 100, label: 'Rotate Speed' },
-    clickColor: { type: 'string', default: 'red', label: 'Click Color' }
+    isVisible: {
+      type: 'boolean',
+      default: true,
+      label: 'Show visible'
+    },
+    speed: { 
+      type: 'number', 
+      default: 100, 
+      label: 'Rotate Speed' 
+    },
+    clickColor: { 
+      type: 'string', 
+      default: 'red', 
+      label: 
+      'Click Color' 
+    },
+    direction: { 
+      type: 'select', 
+      label: 'Direction',
+      options: ['Left', 'Right'], 
+      default: 'Right' 
+    },
+    children: {
+      type: 'array',
+      label: 'Children ID',
+      default: []
+    }
   },
 
   // 내부 상태 저장용 변수 (클로저 대신 객체 속성 활용 추천)
@@ -37,7 +62,11 @@ export default {
   onUpdate (el, props, fields, deltaTime) {
     // deltaTime을 곱해야 프레임이 떨어져도 속도가 일정함
     // speed가 100이면 1초에 100도 회전
-    this._rotation += fields.speed * deltaTime;
+    if(fields.direction === 'Right') {
+      this._rotation += fields.speed * deltaTime;
+    } else {
+      this._rotation -= fields.speed * deltaTime;
+    }
     
     el.style.transform = `rotate(${this._rotation}deg)`;
   },

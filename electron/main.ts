@@ -39,8 +39,8 @@ const getAllFiles = (dirPath: string, arrayOfFiles: string[] = [], rootPath: str
 // 메인 에디터 창 생성
 async function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: 1920,
+    height: 1080,
     title: "Visual Builder",
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -50,6 +50,7 @@ async function createMainWindow() {
   });
 
   if (isDev) {
+    console.log('🚧 Loading Development URL:', process.env.VITE_DEV_SERVER_URL);
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL as string);
     mainWindow.webContents.openDevTools(); // 개발자 도구 열기
   } else {

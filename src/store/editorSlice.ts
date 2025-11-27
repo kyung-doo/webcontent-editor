@@ -1,8 +1,10 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { MIN_ZOOM, MAX_ZOOM } from '../constants';
 
 // 캔버스에 들어갈 요소의 타입 정의
 export interface EditorElement {
   id: string;
+  elementId?: string;
   type: 'Box' | 'Text' | 'Image';
   props: {
     backgroundColor?: string;
@@ -13,6 +15,7 @@ export interface EditorElement {
   scriptValues?: { 
     [scriptName: string]: { [fieldName: string]: any } 
   };
+  className?: string;
 }
 
 interface CanvasSettings {
@@ -60,7 +63,28 @@ export const editorSlice = createSlice({
     updateSelectedElement: (state, action: PayloadAction<any>) => {
       const element = state.elements.find(el => el.id === state.selectedId);
       if (element) {
-        element.props = { ...element.props, ...action.payload };
+        // 전달된 payload의 키-값을 순회
+        Object.entries(action.payload).forEach(([key, value]) => {
+          // 값이 undefined나 null이면 -> 속성 삭제 (Delete Style)
+          if (value === undefined || value === null) {
+            delete element.props[key];
+          } else {
+            // 값이 있으면 -> 업데이트 (Update Style)
+            element.props[key] = value;
+          }
+        });
+      }
+    },
+
+    updateElementAttributes: (state, action: PayloadAction<{ id: string, name: string, value: string }>) => {
+      const el = state.elements.find(e => e.id === action.payload.id);
+      if (el) {
+        const { name, value } = action.payload;
+        if (name === 'id') {
+          el.elementId = value; // elementId 필드에 저장
+        } else if (name === 'className') {
+          el.className = value;
+        }
       }
     },
 
@@ -88,18 +112,34 @@ export const editorSlice = createSlice({
     updateScriptValue: (state, action: PayloadAction<{ id: string, scriptName: string, fieldName: string, value: any }>) => {
       const el = state.elements.find(e => e.id === action.payload.id);
       if (el) {
-        if (!el.scriptValues) el.scriptValues = {};
-        if (!el.scriptValues[action.payload.scriptName]) el.scriptValues[action.payload.scriptName] = {};
+        // 최상위 scriptValues 객체가 없으면 초기화
+        if (!el.scriptValues) {
+          el.scriptValues = {};
+        }
         
-        // 값 저장
+        // 해당 스크립트의 컨테이너가 없으면 초기화 (Reset 후의 상태)
+        if (!el.scriptValues[action.payload.scriptName]) {
+          el.scriptValues[action.payload.scriptName] = {};
+        }
+        
+        // 이제 안전하게 값을 쓸 수 있습니다.
         el.scriptValues[action.payload.scriptName][action.payload.fieldName] = action.payload.value;
+      }
+    },
+
+    // 특정 스크립트의 값들을 초기화
+    resetScriptValues: (state, action: PayloadAction<{ id: string, scriptName: string }>) => {
+      const el = state.elements.find(e => e.id === action.payload.id);
+      if (el && el.scriptValues && el.scriptValues[action.payload.scriptName]) {
+        // 해당 스크립트의 저장된 값을 삭제 -> 렌더링 시 스크립트의 'default' 값을 쓰게 됨
+        el.scriptValues[action.payload.scriptName] = {};
       }
     },
 
     // 캔버스 설정 변경 리듀서
     updateCanvasSettings: (state, action: PayloadAction<Partial<CanvasSettings>>) => {
       if (action.payload.zoom) {
-        action.payload.zoom = Math.max(0.4, Math.min(action.payload.zoom, 3));
+        action.payload.zoom = Math.max(MIN_ZOOM, Math.min(action.payload.zoom, MAX_ZOOM));
       }
       state.canvasSettings = { ...state.canvasSettings, ...action.payload };
     },
@@ -118,8 +158,10 @@ export const {
   addElement, 
   selectElement, 
   updateSelectedElement,
+  updateElementAttributes,
   addScriptToElement,
   removeScriptFromElement,
+  resetScriptValues,
   updateCanvasSettings,
   setInitialState,
   updateScriptValue

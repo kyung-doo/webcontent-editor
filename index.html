@@ -7,6 +7,20 @@
   </head>
   <body>
     <div id="root"></div>
+    <script src="/tailwindcss.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {},
+        },
+        plugins: [
+          function({ addVariant }) {
+            addVariant('on', '&.on');
+            addVariant('active', '&.active');
+          }
+        ]
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

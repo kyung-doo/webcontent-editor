@@ -7,6 +7,7 @@ import { store } from './store/store'
 import { setInitialState } from './store/editorSlice' 
 import App from './App.tsx'
 import Preview from './pages/Preview.tsx'
+import { ModalProvider } from './context/ModalContext.tsx'
 import './index.css'
 
 // 상태 동기화 관리자
@@ -38,14 +39,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Provider store={store}>
       {/* 👇 모든 라우트가 이 동기화 로직 안에서 돕니다 */}
-      <StateSynchronizer>
-        <HashRouter>
-          <Routes>
-            <Route path="/" element={<App />} />
-            <Route path="/preview" element={<Preview />} />
-          </Routes>
-        </HashRouter>
-      </StateSynchronizer>
+      <ModalProvider>
+        <StateSynchronizer>
+          <HashRouter>
+            <Routes>
+              <Route path="/" element={<App />} />
+              <Route path="/preview" element={<Preview />} />
+            </Routes>
+          </HashRouter>
+        </StateSynchronizer>
+      </ModalProvider>
     </Provider>
   </React.StrictMode>,
 )

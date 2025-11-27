@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { selectElement } from '../store/editorSlice';
+import { loadScript } from '../utils/scriptManager.ts';
 
 interface RuntimeElementProps {
   element: any;
@@ -14,51 +15,51 @@ export default function RuntimeElement({ element, selectedId, mode }: RuntimeEle
   
   // 🟢 생명주기 및 게임 루프 엔진
   useEffect(() => {
-    // 에디터 모드이거나 DOM이 없으면 실행 안 함
+    // 에디터 모드이거나 스크립트가 없으면 실행 안 함
     if (mode !== 'preview' || !element.scripts || !domRef.current) return;
 
     let animationFrameId: number;
-    let loadedModules: any[] = []; // 로드된 스크립트 모듈 저장소
-    let lastTime = performance.now(); // 델타타임 계산용
+    let loadedModules: any[] = [];
+    let lastTime = performance.now();
 
     const runScripts = async () => {
       // 1. 모든 스크립트 로드
       for (const scriptPath of element.scripts) {
         try {
-          const module = await import(/* @vite-ignore */ `/assets/${scriptPath}?t=${Date.now()}`);
+          // Preview 모드면 forceReload = true (최신 코드 반영)
+          const shouldReload = (mode === 'preview');
+          const module = await loadScript(scriptPath, shouldReload);
           
-          // 필드값 병합 로직 (저장된 값 + 기본값)
-          const savedFields = element.scriptValues?.[scriptPath] || {};
-          const defaultFields = module.default?.fields || {};
-          const finalFields: any = {};
-          Object.keys(defaultFields).forEach(key => finalFields[key] = defaultFields[key].default);
-          Object.assign(finalFields, savedFields);
+          if (module) {
+            // 필드값 병합 (저장된 값 + 기본값)
+            const savedFields = element.scriptValues?.[scriptPath] || {};
+            const defaultFields = module.default?.fields || {};
+            const finalFields: any = {};
+            Object.keys(defaultFields).forEach(key => finalFields[key] = defaultFields[key].default);
+            Object.assign(finalFields, savedFields);
 
-          // 모듈과 필드값을 묶어서 저장
-          loadedModules.push({ 
-            instance: module.default, 
-            fields: finalFields 
-          });
-
+            loadedModules.push({ 
+              instance: module.default, 
+              fields: finalFields 
+            });
+          }
         } catch (err) {
           console.error(`스크립트 로드 실패 (${scriptPath}):`, err);
         }
       }
 
-      // 2. onStart 실행 (초기화)
+      // 2. onStart 실행
       loadedModules.forEach(({ instance, fields }) => {
         if (instance.onStart && domRef.current) {
           try {
-            // 이벤트 리스너 등록 등은 여기서 사용자가 직접 구현함
             instance.onStart(domRef.current, element.props, fields);
           } catch (e) { console.error('onStart Error:', e); }
         }
       });
 
-      // 3. onUpdate 루프 시작 (애니메이션)
+      // 3. onUpdate 루프 시작
       const loop = (time: number) => {
-        // 델타타임 계산 (초 단위, 예: 0.016s)
-        const deltaTime = (time - lastTime) / 1000;
+        const deltaTime = (time - lastTime) / 1000; // 초 단위 변환
         lastTime = time;
 
         loadedModules.forEach(({ instance, fields }) => {
@@ -72,7 +73,6 @@ export default function RuntimeElement({ element, selectedId, mode }: RuntimeEle
         animationFrameId = requestAnimationFrame(loop);
       };
 
-      // 루프 시작
       animationFrameId = requestAnimationFrame(loop);
     };
 
@@ -80,12 +80,11 @@ export default function RuntimeElement({ element, selectedId, mode }: RuntimeEle
 
     // 4. onDestroy 실행 (Cleanup)
     return () => {
-      cancelAnimationFrame(animationFrameId); // 루프 정지
+      cancelAnimationFrame(animationFrameId);
       
       loadedModules.forEach(({ instance, fields }) => {
         if (instance.onDestroy && domRef.current) {
           try {
-            // 등록한 이벤트 리스너 제거 등
             instance.onDestroy(domRef.current, element.props, fields);
           } catch (e) { console.error('onDestroy Error:', e); }
         }
@@ -94,26 +93,28 @@ export default function RuntimeElement({ element, selectedId, mode }: RuntimeEle
   }, [element.scripts, element.scriptValues, mode]); 
 
 
-  // 🟢 클릭 핸들러 (에디터 선택용으로만 남김)
+  // 🟢 클릭 핸들러 (에디터 전용)
   const handleClick = (e: React.MouseEvent) => {
     // 에디터 모드일 때만 선택 기능 동작
     if (mode === 'edit') {
         e.stopPropagation();
         if (element.id) dispatch(selectElement(element.id));
     }
-    // Preview 모드일 때는 클릭 이벤트를 전파시켜서 
-    // 스크립트에서 등록한 addEventListener('click')이 작동하게 둠
+    // Preview 모드에서는 이벤트를 막지 않음 (사용자 스크립트가 처리)
   };
 
   return (
     <div
       ref={domRef}
-      id={element.id}
+      id={element.elementId}
       onClick={handleClick}
-      className={`relative transition-all 
+      // Absolute 포지션으로 배치
+      className={`
         ${mode === 'edit' ? 'cursor-pointer hover:ring-1 hover:ring-blue-300' : ''} 
         ${mode === 'edit' && selectedId === element.id ? 'ring-2 ring-blue-500 z-10' : ''}
+        ${element.className || ''} 
       `}
+
       style={{
         left: element.props.left, 
         top: element.props.top,

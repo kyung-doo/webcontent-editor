@@ -2,7 +2,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from './store/store';
 import ElementBar from './components/ElementBar';
 import Canvas from './components/Canvas';
-import PropertiesPanel from './components/PropertiesPanel';
+import RightSidebar from './components/RightSidebar';
 import AssetPanel from './components/AssetPanel'; // 👇 import 추가
 
 function App() {
@@ -57,7 +57,7 @@ function App() {
         <div className="flex flex-1 overflow-hidden">
           <ElementBar />
           <Canvas />
-          <PropertiesPanel />
+          <RightSidebar />
         </div>
 
         {/* 👇 하단 에셋 패널 추가 (높이는 컴포넌트 내부 h-48로 고정됨) */}
