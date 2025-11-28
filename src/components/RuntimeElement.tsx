@@ -14,17 +14,19 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
   const dispatch = useDispatch();
   const domRef = useRef<HTMLDivElement>(null);
 
+  // 1. Redux Data
   const element = useSelector((state: RootState) => 
     state.elements.elements.find(el => el.elementId === elementId)
   );
   const allElements = useSelector((state: RootState) => state.elements.elements);
-  const { selectedElementId, activeContainerId } = useSelector((state: RootState) => state.canvas);
+  const { selectedElementId, activeContainerId, canvasSettings } = useSelector((state: RootState) => state.canvas);
 
+  // 2. Status Check
   const isSelected = selectedElementId === elementId;
   const isActiveContainer = elementId === activeContainerId;
   const isPreview = mode === 'preview';
 
-  // --- 상태 로직 ---
+  // --- 상호작용 로직 ---
   const isDirectChild = element?.parentId === activeContainerId;
 
   const isAncestor = useMemo(() => {
@@ -40,64 +42,138 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
   const isFocused = isActiveContainer || isInsideActive;
   const isRootMode = activeContainerId === 'root';
   
-  // ⭐ [수정 1] 딤드(Dimmed)는 아예 안 보이게 (Opacity 0)
+  // 흐림 처리
   const isDimmed = !isPreview && !isRootMode && !isFocused && !isAncestor;
 
-  // ⭐ [수정 2] 조상(Ancestor)이거나 활성(Active)이면 껍데기를 숨겨야 함
-  // (Active는 내부 진입 상태, Ancestor는 그 상위 부모들)
-  const shouldHideVisuals = !isPreview && (isActiveContainer || isAncestor);
-
+  // 클릭 제어
   const canInteract = mode === 'edit' && isDirectChild && !isActiveContainer && !isDimmed;
   const pointerEvents = isPreview ? 'auto' : (canInteract ? 'auto' : 'none');
   const childrenPointerEvents = isPreview ? 'auto' : (isActiveContainer ? 'auto' : 'none');
 
+  // ⭐ [추가됨] 시각적 숨김 여부 (편집 모드에서 활성 컨테이너 혹은 조상이면 껍데기 숨김)
+  const shouldHideVisuals = !isPreview && (isActiveContainer || isAncestor);
 
-  // --- Hit Area 계산 (기존 유지) ---
+
+  // --------------------------------------------------------------------------
+  // 📐 [Hit Area] DOM 기반 영역 계산 (Zoom 보정 포함)
+  // --------------------------------------------------------------------------
   const [hitAreaRect, setHitAreaRect] = useState<{left:number, top:number, width:number, height:number} | null>(null);
+
   useLayoutEffect(() => {
     if (isPreview || !element || element.type !== 'Box' || element.children.length === 0 || !domRef.current) {
         setHitAreaRect(null);
         return;
     }
+
     const measureGroup = () => {
         const parentRect = domRef.current!.getBoundingClientRect();
+        const zoom = canvasSettings.zoom || 1;
+        
         let minX = 0; let minY = 0;
         let maxX = parseFloat(element.props.width) || 50;
         let maxY = parseFloat(element.props.height) || 50;
+
+        const allDescendants = domRef.current!.querySelectorAll('[data-id]');
         let hasValidChild = false;
-        element.children.forEach(childId => {
-            const childNode = document.querySelector(`[data-id="${childId}"]`);
-            if (childNode) {
-                hasValidChild = true;
-                const childRect = childNode.getBoundingClientRect();
-                const relLeft = childRect.left - parentRect.left;
-                const relTop = childRect.top - parentRect.top;
-                const relRight = relLeft + childRect.width;
-                const relBottom = relTop + childRect.height;
-                minX = Math.min(minX, relLeft);
-                minY = Math.min(minY, relTop);
-                maxX = Math.max(maxX, relRight);
-                maxY = Math.max(maxY, relBottom);
-            }
+
+        allDescendants.forEach((node) => {
+            if (node === domRef.current) return;
+
+            hasValidChild = true;
+            const childRect = node.getBoundingClientRect();
+
+            const relLeft = (childRect.left - parentRect.left) / zoom;
+            const relTop = (childRect.top - parentRect.top) / zoom;
+            const relWidth = childRect.width / zoom;
+            const relHeight = childRect.height / zoom;
+
+            const relRight = relLeft + relWidth;
+            const relBottom = relTop + relHeight;
+
+            minX = Math.min(minX, relLeft);
+            minY = Math.min(minY, relTop);
+            maxX = Math.max(maxX, relRight);
+            maxY = Math.max(maxY, relBottom);
         });
+
         if (!hasValidChild) return;
+
         const PADDING = 4;
-        setHitAreaRect({ left: minX - PADDING, top: minY - PADDING, width: (maxX - minX) + PADDING*2, height: (maxY - minY) + PADDING*2 });
+        setHitAreaRect({
+            left: minX - PADDING,
+            top: minY - PADDING,
+            width: (maxX - minX) + (PADDING * 2),
+            height: (maxY - minY) + (PADDING * 2)
+        });
     };
+
     measureGroup();
-    const timer = setTimeout(measureGroup, 50);
+    const timer = setTimeout(measureGroup, 100);
     return () => clearTimeout(timer);
-  }, [element, allElements, isPreview, activeContainerId]);
+
+  }, [element, allElements, isPreview, activeContainerId, canvasSettings.zoom]);
 
 
-  // --- 스크립트 엔진 (기존 유지) ---
+  // --------------------------------------------------------------------------
+  // 🟢 스크립트 엔진
+  // --------------------------------------------------------------------------
   const latestDataRef = useRef({ props: element?.props, scriptValues: element?.scriptValues });
   useEffect(() => { if(element) latestDataRef.current = { props: element.props, scriptValues: element.scriptValues }; }, [element?.props, element?.scriptValues]);
   const requestRef = useRef<number>(); const modulesRef = useRef<any[]>([]);
+  
   useEffect(() => { 
       if (!element || !isPreview || !element.scripts || !domRef.current) return;
-      // ... (스크립트 실행 로직) ...
-      return () => { /* cleanup */ };
+      let isCleanedUp = false;
+      const runScripts = async () => {
+        if (requestRef.current) cancelAnimationFrame(requestRef.current);
+        modulesRef.current = [];
+        const loadedList: any[] = [];
+        const processed = new Set<string>();
+        for (const scriptPath of element.scripts!) {
+            if (isCleanedUp) return;
+            if (processed.has(scriptPath)) continue;
+            processed.add(scriptPath);
+            try {
+              const module = await loadScript(scriptPath, true);
+              if (module) {
+                const ScriptClass = module.default;
+                const instance = (typeof ScriptClass === 'function') ? new ScriptClass() : ScriptClass;
+                const defaultFields = ScriptClass.fields || ScriptClass.default?.fields || {};
+                loadedList.push({ path: scriptPath, instance, defaultFields });
+              }
+            } catch (e) {}
+        }
+        if (isCleanedUp) return;
+        modulesRef.current = loadedList;
+        modulesRef.current.forEach(({ instance, defaultFields, path }) => {
+            if (instance.onStart) {
+                const currentVals = latestDataRef.current.scriptValues?.[path] || {};
+                const finalFields = { ...{}, ...defaultFields };
+                const simplifiedDefaults: any = {};
+                Object.keys(defaultFields).forEach(k => simplifiedDefaults[k] = defaultFields[k].default);
+                Object.assign(simplifiedDefaults, currentVals);
+                try { instance.onStart(domRef.current, latestDataRef.current.props, simplifiedDefaults); } catch(e) {}
+            }
+        });
+        let lastTime = performance.now();
+        const loop = (time: number) => {
+            if (isCleanedUp) return;
+            const deltaTime = (time - lastTime) / 1000; lastTime = time;
+            modulesRef.current.forEach(({ instance, defaultFields, path }) => {
+                if (instance.onUpdate && domRef.current) {
+                    const currentVals = latestDataRef.current.scriptValues?.[path] || {};
+                    const simplifiedDefaults: any = {};
+                    Object.keys(defaultFields).forEach(k => simplifiedDefaults[k] = defaultFields[k].default);
+                    Object.assign(simplifiedDefaults, currentVals);
+                    try { instance.onUpdate(domRef.current, latestDataRef.current.props, simplifiedDefaults, deltaTime); } catch(e) {}
+                }
+            });
+            requestRef.current = requestAnimationFrame(loop);
+        };
+        requestRef.current = requestAnimationFrame(loop);
+      };
+      runScripts();
+      return () => { isCleanedUp = true; if (requestRef.current) cancelAnimationFrame(requestRef.current); modulesRef.current.forEach(({ instance }) => { if(instance.onDestroy) try { instance.onDestroy(domRef.current, latestDataRef.current.props, {}); } catch(e) {} }); modulesRef.current = []; };
   }, [JSON.stringify(element?.scripts), isPreview]);
 
 
@@ -131,22 +207,19 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
     minHeight: element.type === 'Image' ? 'auto' : '50px',
     ...element.props,
     
-    // ⭐ [수정] Dimmed(관련 없는 요소)는 아예 안 보이게 처리 (opacity: 0)
-    opacity: isDimmed ? 0 : 1, 
-    
-    // filter는 제거 (안 보이니까 필요 없음)
+    opacity: isDimmed ? 0.2 : 1, 
+    filter: isDimmed ? 'grayscale(100%)' : 'none',
     pointerEvents: pointerEvents as any,
     zIndex: isActiveContainer ? 100 : (element.props.zIndex || 'auto')
   };
 
-  // ⭐ [수정] 조상(Ancestor)이거나 활성(Active) 컨테이너면 껍데기 숨김
-  // (자식은 보여야 하므로 display:none은 안됨. 시각적 속성만 투명하게)
+  // ⭐ [적용] 껍데기 숨김 (shouldHideVisuals 변수 사용)
   if (shouldHideVisuals) {
       finalStyle.backgroundColor = 'transparent';
       finalStyle.border = 'none';
       finalStyle.boxShadow = 'none';
       finalStyle.outline = 'none';
-      finalStyle.backgroundImage = 'none';
+      finalStyle.backgroundImage = 'none'; 
   }
 
   const showGroupBorder = !isPreview && isSelected && !isActiveContainer && element.type === 'Box' && element.children.length > 0;
@@ -166,12 +239,12 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
       `}
       style={finalStyle}
     >
-      {/* ⭐ [수정] 조상/활성 상태일 때는 텍스트/이미지 내용물도 숨김 (자식 Box만 렌더링) */}
+      {/* ⭐ [수정] 내용물 숨김 (껍데기 숨김 모드일 때 텍스트/이미지 내용도 숨김 - 자식 박스만 보임) */}
       {!shouldHideVisuals && (
-        <>
-          {element.type === 'Image' && <img src={element.props.src} className="w-full h-full pointer-events-none object-contain" />}
-          {element.type === 'Text' && <span style={{ fontSize: element.props.fontSize, color: element.props.color }}>{element.props.text}</span>}
-        </>
+          <>
+            {element.type === 'Image' && <img src={element.props.src} className="w-full h-full pointer-events-none object-contain" />}
+            {element.type === 'Text' && <span style={{ fontSize: element.props.fontSize, color: element.props.color }}>{element.props.text}</span>}
+          </>
       )}
       
       {/* Box Children */}

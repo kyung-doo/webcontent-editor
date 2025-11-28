@@ -79,7 +79,7 @@ function Breadcrumb({ activeId, elements, onNavigate }: any) {
                 />
               </svg>
             )}
-            {el.id || (el.elementId === "root" ? "Scene 1" : "Symbol")}
+            {el.id || (el.elementId === "root" ? "root" : "Box Container")}
           </button>
         </React.Fragment>
       ))}
