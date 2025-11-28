@@ -1,13 +1,15 @@
 import { configureStore } from '@reduxjs/toolkit';
-import editorReducer from './editorSlice';
-import { syncMiddleware } from './syncMiddleware'; // 2단계에서 만든 것
+import elementReducer from './elementSlice';
+import canvasReducer from './canvasSlice';
+import { syncMiddleware } from './syncMiddleware';
 
 export const store = configureStore({
   reducer: {
-    editor: editorReducer,
+    elements: elementReducer, // Data
+    canvas: canvasReducer,    // View
   },
   middleware: (getDefaultMiddleware) => 
-    getDefaultMiddleware().concat(syncMiddleware), // 미들웨어 장착
+    getDefaultMiddleware().concat(syncMiddleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

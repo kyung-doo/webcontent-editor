@@ -6,7 +6,8 @@ import RightSidebar from './components/RightSidebar';
 import AssetPanel from './components/AssetPanel'; // 👇 import 추가
 
 function App() {
-  const { elements, canvasSettings } = useSelector((state: RootState) => state.editor);
+  const { elements } = useSelector((state: RootState) => state.elements);
+  const { canvasSettings } = useSelector((state: RootState) => state.canvas);
 
   const handleSave = () => {
     const projectData = { elements };

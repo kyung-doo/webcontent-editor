@@ -33,9 +33,3 @@ export const clearScriptCache = () => {
     delete scriptCache[key];
   }
 };
-
-export const getScriptSchema = async (scriptPath: string) => {
-  // 스키마를 가져올 때는 굳이 매번 리로드할 필요 없음 (기본값 false)
-  const module = await loadScript(scriptPath, false);
-  return module?.default?.fields || {};
-};
