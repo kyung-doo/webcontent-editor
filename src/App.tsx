@@ -1,6 +1,6 @@
 import { useSelector } from 'react-redux';
 import { RootState } from './store/store';
-import ElementBar from './components/ElementBar';
+import LeftSidebar from './components/LeftSidebar';
 import Canvas from './components/Canvas';
 import RightSidebar from './components/RightSidebar';
 import AssetPanel from './components/AssetPanel'; // 👇 import 추가
@@ -56,7 +56,7 @@ function App() {
         
         {/* 작업 공간 (좌+중+우) - 남은 공간(flex-1)을 다 차지함 */}
         <div className="flex flex-1 overflow-hidden">
-          <ElementBar />
+          <LeftSidebar />
           <Canvas />
           <RightSidebar />
         </div>

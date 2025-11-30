@@ -19,10 +19,12 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
     state.elements.elements.find(el => el.elementId === elementId)
   );
   const allElements = useSelector((state: RootState) => state.elements.elements);
-  const { selectedElementId, activeContainerId, canvasSettings } = useSelector((state: RootState) => state.canvas);
+  const { selectedElementId, selectedIds, activeContainerId, canvasSettings } = useSelector((state: RootState) => state.canvas);
 
   // 2. Status Check
-  const isSelected = selectedElementId === elementId;
+  const isSelected = selectedIds.includes(elementId);
+  const isMultiSelectionActive = selectedIds.length > 1; // 다중 선택 모드
+
   const isActiveContainer = elementId === activeContainerId;
   const isPreview = mode === 'preview';
 
@@ -34,7 +36,7 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
     let current = allElements.find(el => el.elementId === activeContainerId);
     while (current && current.parentId) {
       if (current.parentId === elementId) return true;
-      current = allElements.find(el => el.elementId === current.parentId);
+      current = allElements.find(el => el.elementId === current?.parentId);
     }
     return false;
   }, [elementId, activeContainerId, allElements]);
@@ -42,20 +44,17 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
   const isFocused = isActiveContainer || isInsideActive;
   const isRootMode = activeContainerId === 'root';
   
-  // 흐림 처리
   const isDimmed = !isPreview && !isRootMode && !isFocused && !isAncestor;
 
-  // 클릭 제어
   const canInteract = mode === 'edit' && isDirectChild && !isActiveContainer && !isDimmed;
   const pointerEvents = isPreview ? 'auto' : (canInteract ? 'auto' : 'none');
   const childrenPointerEvents = isPreview ? 'auto' : (isActiveContainer ? 'auto' : 'none');
 
-  // ⭐ [추가됨] 시각적 숨김 여부 (편집 모드에서 활성 컨테이너 혹은 조상이면 껍데기 숨김)
   const shouldHideVisuals = !isPreview && (isActiveContainer || isAncestor);
 
 
   // --------------------------------------------------------------------------
-  // 📐 [Hit Area] DOM 기반 영역 계산 (Zoom 보정 포함)
+  // 📐 Hit Area Calculation
   // --------------------------------------------------------------------------
   const [hitAreaRect, setHitAreaRect] = useState<{left:number, top:number, width:number, height:number} | null>(null);
 
@@ -66,15 +65,16 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
     }
 
     const measureGroup = () => {
-        const parentRect = domRef.current!.getBoundingClientRect();
+        if (!domRef.current) return;
+        const parentRect = domRef.current.getBoundingClientRect();
         const zoom = canvasSettings.zoom || 1;
         
         let minX = 0; let minY = 0;
         let maxX = parseFloat(element.props.width) || 50;
         let maxY = parseFloat(element.props.height) || 50;
-
-        const allDescendants = domRef.current!.querySelectorAll('[data-id]');
         let hasValidChild = false;
+
+        const allDescendants = domRef.current.querySelectorAll('[data-id]');
 
         allDescendants.forEach((node) => {
             if (node === domRef.current) return;
@@ -115,75 +115,88 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
 
 
   // --------------------------------------------------------------------------
-  // 🟢 스크립트 엔진
+  // 🟢 Script Engine
   // --------------------------------------------------------------------------
   const latestDataRef = useRef({ props: element?.props, scriptValues: element?.scriptValues });
   useEffect(() => { if(element) latestDataRef.current = { props: element.props, scriptValues: element.scriptValues }; }, [element?.props, element?.scriptValues]);
   const requestRef = useRef<number>(); const modulesRef = useRef<any[]>([]);
-  
-  useEffect(() => { 
-      if (!element || !isPreview || !element.scripts || !domRef.current) return;
-      let isCleanedUp = false;
-      const runScripts = async () => {
-        if (requestRef.current) cancelAnimationFrame(requestRef.current);
-        modulesRef.current = [];
-        const loadedList: any[] = [];
-        const processed = new Set<string>();
-        for (const scriptPath of element.scripts!) {
-            if (isCleanedUp) return;
-            if (processed.has(scriptPath)) continue;
-            processed.add(scriptPath);
-            try {
-              const module = await loadScript(scriptPath, true);
-              if (module) {
-                const ScriptClass = module.default;
-                const instance = (typeof ScriptClass === 'function') ? new ScriptClass() : ScriptClass;
-                const defaultFields = ScriptClass.fields || ScriptClass.default?.fields || {};
-                loadedList.push({ path: scriptPath, instance, defaultFields });
-              }
-            } catch (e) {}
-        }
+
+  useEffect(() => {
+    if (!element || !isPreview || !element.scripts || !domRef.current) return;
+
+    let isCleanedUp = false;
+    const runScripts = async () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      modulesRef.current = [];
+      const loadedList: any[] = [];
+      const processed = new Set<string>();
+
+      for (const scriptPath of element.scripts!) {
         if (isCleanedUp) return;
-        modulesRef.current = loadedList;
+        if (processed.has(scriptPath)) continue;
+        processed.add(scriptPath);
+        try {
+          const module = await loadScript(scriptPath, true);
+          if (module) {
+            const ScriptClass = module.default;
+            const instance = (typeof ScriptClass === 'function') ? new ScriptClass() : ScriptClass;
+            const defaultFields = ScriptClass.fields || ScriptClass.default?.fields || {};
+            loadedList.push({ path: scriptPath, instance, defaultFields });
+          }
+        } catch (e) {}
+      }
+      
+      if (isCleanedUp) return;
+      modulesRef.current = loadedList;
+      
+      modulesRef.current.forEach(({ instance, defaultFields, path }) => {
+          if (instance.onStart) {
+              const currentVals = latestDataRef.current.scriptValues?.[path] || {};
+              const finalFields = { ...{}, ...defaultFields };
+              const simplifiedDefaults: any = {};
+              Object.keys(defaultFields).forEach(k => simplifiedDefaults[k] = defaultFields[k].default);
+              Object.assign(simplifiedDefaults, currentVals);
+              try { instance.onStart(domRef.current, latestDataRef.current.props, simplifiedDefaults); } catch(e) {}
+          }
+      });
+
+      let lastTime = performance.now();
+      const loop = (time: number) => {
+        if (isCleanedUp) return;
+        const deltaTime = (time - lastTime) / 1000; lastTime = time;
         modulesRef.current.forEach(({ instance, defaultFields, path }) => {
-            if (instance.onStart) {
-                const currentVals = latestDataRef.current.scriptValues?.[path] || {};
-                const finalFields = { ...{}, ...defaultFields };
-                const simplifiedDefaults: any = {};
-                Object.keys(defaultFields).forEach(k => simplifiedDefaults[k] = defaultFields[k].default);
-                Object.assign(simplifiedDefaults, currentVals);
-                try { instance.onStart(domRef.current, latestDataRef.current.props, simplifiedDefaults); } catch(e) {}
-            }
+          if (instance.onUpdate && domRef.current) {
+            const currentVals = latestDataRef.current.scriptValues?.[path] || {};
+            const simplifiedDefaults: any = {};
+            Object.keys(defaultFields).forEach(k => simplifiedDefaults[k] = defaultFields[k].default);
+            Object.assign(simplifiedDefaults, currentVals);
+            try { instance.onUpdate(domRef.current, latestDataRef.current.props, simplifiedDefaults, deltaTime); } catch(e) {}
+          }
         });
-        let lastTime = performance.now();
-        const loop = (time: number) => {
-            if (isCleanedUp) return;
-            const deltaTime = (time - lastTime) / 1000; lastTime = time;
-            modulesRef.current.forEach(({ instance, defaultFields, path }) => {
-                if (instance.onUpdate && domRef.current) {
-                    const currentVals = latestDataRef.current.scriptValues?.[path] || {};
-                    const simplifiedDefaults: any = {};
-                    Object.keys(defaultFields).forEach(k => simplifiedDefaults[k] = defaultFields[k].default);
-                    Object.assign(simplifiedDefaults, currentVals);
-                    try { instance.onUpdate(domRef.current, latestDataRef.current.props, simplifiedDefaults, deltaTime); } catch(e) {}
-                }
-            });
-            requestRef.current = requestAnimationFrame(loop);
-        };
         requestRef.current = requestAnimationFrame(loop);
       };
-      runScripts();
-      return () => { isCleanedUp = true; if (requestRef.current) cancelAnimationFrame(requestRef.current); modulesRef.current.forEach(({ instance }) => { if(instance.onDestroy) try { instance.onDestroy(domRef.current, latestDataRef.current.props, {}); } catch(e) {} }); modulesRef.current = []; };
+      requestRef.current = requestAnimationFrame(loop);
+    };
+    runScripts();
+    return () => {
+      isCleanedUp = true;
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      modulesRef.current.forEach(({ instance }) => {
+        if (instance.onDestroy) try { instance.onDestroy(domRef.current, latestDataRef.current.props, {}); } catch(e) {}
+      });
+      modulesRef.current = [];
+    };
   }, [JSON.stringify(element?.scripts), isPreview]);
 
 
-  // --- 핸들러 ---
+  // --- Event Handlers ---
   const handleClick = (e: React.MouseEvent) => {
     if (!isPreview && canInteract) {
         e.stopPropagation();
-        dispatch(selectElement(element!.elementId));
+        // Selection logic handled by Canvas MouseDown/Up
     }
   };
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!isPreview && element?.type === 'Box' && canInteract) {
       e.stopPropagation();
@@ -194,7 +207,7 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
   if (!element) return null;
 
   // --------------------------------------------------------------------------
-  // 🎨 렌더링 스타일
+  // 🎨 Rendering
   // --------------------------------------------------------------------------
   const finalStyle: React.CSSProperties = {
     left: element.props.left, 
@@ -207,13 +220,12 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
     minHeight: element.type === 'Image' ? 'auto' : '50px',
     ...element.props,
     
-    opacity: isDimmed ? 0.2 : 1, 
-    filter: isDimmed ? 'grayscale(100%)' : 'none',
+    opacity: isDimmed ? 0.3 : 1, // 흐림 처리 (회색조 X, 투명도만)
+    filter: 'none',
     pointerEvents: pointerEvents as any,
     zIndex: isActiveContainer ? 100 : (element.props.zIndex || 'auto')
   };
 
-  // ⭐ [적용] 껍데기 숨김 (shouldHideVisuals 변수 사용)
   if (shouldHideVisuals) {
       finalStyle.backgroundColor = 'transparent';
       finalStyle.border = 'none';
@@ -222,8 +234,10 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
       finalStyle.backgroundImage = 'none'; 
   }
 
-  const showGroupBorder = !isPreview && isSelected && !isActiveContainer && element.type === 'Box' && element.children.length > 0;
-  const showNormalBorder = !isPreview && isSelected && !isActiveContainer && !showGroupBorder;
+  // ⭐ [조건] 다중 선택 중이면 개별 테두리 그리지 않음
+  // 단일 선택일 때만 그룹 테두리 or 일반 테두리 표시
+  const showGroupBorder = !isMultiSelectionActive && !isPreview && isSelected && !isActiveContainer && element.type === 'Box' && element.children.length > 0;
+  const showNormalBorder = !isMultiSelectionActive && !isPreview && isSelected && !isActiveContainer && !showGroupBorder;
   const labelText = element.id || (showGroupBorder ? 'Group' : element.type);
 
   return (
@@ -233,13 +247,9 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
       data-id={element.elementId}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      className={`absolute transition-all duration-300
-        ${!isPreview && canInteract && !isDimmed ? 'cursor-pointer' : ''} 
-        ${element.className || ''} 
-      `}
+      className={`absolute ${!isPreview && canInteract && !isDimmed ? 'cursor-pointer' : ''} ${element.className || ''}`}
       style={finalStyle}
     >
-      {/* ⭐ [수정] 내용물 숨김 (껍데기 숨김 모드일 때 텍스트/이미지 내용도 숨김 - 자식 박스만 보임) */}
       {!shouldHideVisuals && (
           <>
             {element.type === 'Image' && <img src={element.props.src} className="w-full h-full pointer-events-none object-contain" />}
@@ -247,31 +257,32 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
           </>
       )}
       
-      {/* Box Children */}
       {element.type === 'Box' && (
         <>
-          {/* Hit Area */}
+          {/* ⭐ [중요] Hit Area에 class='group-hit-area' 추가 */}
+          {/* Canvas.tsx에서 드래그 충돌 검사 시 이 클래스를 찾아서 포함시킴 */}
           {!isPreview && !isActiveContainer && canInteract && hitAreaRect && (
-              <div className="absolute z-0 pointer-events-auto" style={{ left: hitAreaRect.left, top: hitAreaRect.top, width: hitAreaRect.width, height: hitAreaRect.height }} />
+              <div 
+                className="absolute z-0 pointer-events-auto group-hit-area" // 👈 클래스 추가
+                style={{
+                    left: hitAreaRect.left,
+                    top: hitAreaRect.top,
+                    width: hitAreaRect.width,
+                    height: hitAreaRect.height,
+                }}
+              />
           )}
 
           <div style={{ display: 'contents', pointerEvents: childrenPointerEvents as any }}>
             {element.children?.map((childId: string) => (
-                <RuntimeElement 
-                  key={childId} 
-                  elementId={childId} 
-                  mode={mode}
-                  isInsideActive={isPreview ? true : isFocused} 
-                />
+                <RuntimeElement key={childId} elementId={childId} mode={mode} isInsideActive={isPreview ? true : isFocused} />
             ))}
           </div>
 
-          {/* Hint */}
           {!isPreview && (!element.children || element.children.length === 0) && !isActiveContainer && !isDimmed && (
              <span className="text-[10px] text-gray-300 pointer-events-none select-none flex items-center justify-center h-full">Box</span>
           )}
 
-          {/* Crosshair */}
           {!isPreview && isActiveContainer && (
              <div className="absolute left-0 top-0 w-full h-full pointer-events-none overflow-visible z-50">
                 <div className="absolute top-0 left-[-2000px] right-[-2000px] h-[1px] bg-cyan-500/40" style={{ top: 0 }}></div>
@@ -282,7 +293,7 @@ export default function RuntimeElement({ elementId, mode, isInsideActive = false
         </>
       )}
 
-      {/* Borders */}
+      {/* Borders (단일 선택일 때만 렌더링) */}
       {showGroupBorder && hitAreaRect && (
           <div className="absolute pointer-events-none z-50 border-2 border-blue-500 border-dashed bg-blue-50/5 rounded-sm" style={{ left: hitAreaRect.left, top: hitAreaRect.top, width: hitAreaRect.width, height: hitAreaRect.height }}>
             <div className="absolute top-0 left-0 -translate-y-full bg-blue-500 text-white text-[9px] px-1.5 py-0.5 rounded-t font-medium shadow-sm">{labelText}</div>
