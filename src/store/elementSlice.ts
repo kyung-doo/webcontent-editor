@@ -1,9 +1,9 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 export interface EditorElement {
   elementId: string;
   id?: string;
-  type: 'Box' | 'Text' | 'Image';
+  type: "Box" | "Text" | "Image";
   props: { [key: string]: any };
   scripts?: string[];
   scriptValues?: { [scriptName: string]: { [fieldName: string]: any } };
@@ -17,21 +17,21 @@ interface ElementState {
 }
 
 const rootElement: EditorElement = {
-  elementId: 'root',
-  id: 'root',
-  type: 'Box',
-  props: { 
-    width: '100%', 
-    height: '100%', 
-    backgroundColor: '#ffffff', 
-    position: 'relative', 
-    overflow: 'hidden' 
+  elementId: "root",
+  id: "root",
+  type: "Box",
+  props: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#ffffff",
+    position: "relative",
+    overflow: "hidden",
   },
   children: [],
   parentId: null,
-  className: '',
+  className: "",
   scripts: [],
-  scriptValues: {}
+  scriptValues: {},
 };
 
 const initialState: ElementState = {
@@ -39,30 +39,61 @@ const initialState: ElementState = {
 };
 
 export const elementSlice = createSlice({
-  name: 'elements',
+  name: "elements",
   initialState,
   reducers: {
-    // 1. 요소 추가
+    // 1. Add Single Element
     addElement: (state, action: PayloadAction<EditorElement>) => {
       let parentId = action.payload.parentId;
-      // 부모가 없거나 유효하지 않으면 Root로 강제
-      let parent = state.elements.find(el => el.elementId === parentId);
+      let parent = state.elements.find((el) => el.elementId === parentId);
+
+      // Default to root if parent not found
       if (!parent) {
-        parentId = 'root';
-        parent = state.elements.find(el => el.elementId === 'root');
+        parentId = "root";
+        parent = state.elements.find((el) => el.elementId === "root");
       }
-      
+
       if (parent) {
         const newElement = { ...action.payload, parentId };
-        state.elements.push(newElement);
-        parent.children.push(newElement.elementId);
+        // Ensure uniqueness
+        if (!state.elements.find((e) => e.elementId === newElement.elementId)) {
+          state.elements.push(newElement);
+          if (!parent.children.includes(newElement.elementId)) {
+            parent.children.push(newElement.elementId);
+          }
+        }
       }
     },
-    
-    // 2. 요소 이동
-    moveElements: (state, action: PayloadAction<{ ids: string[], dx: number, dy: number }>) => {
+
+    // 2. Add Multiple Elements (Paste/Clone)
+    addElements: (state, action: PayloadAction<EditorElement[]>) => {
+      const newElements = action.payload;
+      newElements.forEach((el) => {
+        // Prevent duplicate elements
+        if (!state.elements.find((e) => e.elementId === el.elementId)) {
+          state.elements.push(el);
+
+          if (el.parentId) {
+            const parent = state.elements.find(
+              (p) => p.elementId === el.parentId
+            );
+            if (parent) {
+              if (!parent.children.includes(el.elementId)) {
+                parent.children.push(el.elementId);
+              }
+            }
+          }
+        }
+      });
+    },
+
+    // 3. Move Elements (Relative)
+    moveElements: (
+      state,
+      action: PayloadAction<{ ids: string[]; dx: number; dy: number }>
+    ) => {
       const { ids, dx, dy } = action.payload;
-      state.elements.forEach(el => {
+      state.elements.forEach((el) => {
         if (ids.includes(el.elementId)) {
           const currentLeft = parseFloat(el.props.left || 0);
           const currentTop = parseFloat(el.props.top || 0);
@@ -72,119 +103,288 @@ export const elementSlice = createSlice({
       });
     },
 
-    // ⭐ [수정] 요소 삭제 (부모와의 연결 고리 확실히 끊기)
+    // 4. Set Position (Absolute)
+    setElementsPositions: (
+      state,
+      action: PayloadAction<{ id: string; left: string; top: string }[]>
+    ) => {
+      action.payload.forEach(({ id, left, top }) => {
+        const el = state.elements.find((e) => e.elementId === id);
+        if (el) {
+          el.props.left = left;
+          el.props.top = top;
+        }
+      });
+    },
+
+    // ⭐ 5. Delete Elements
     deleteElements: (state, action: PayloadAction<string[]>) => {
       const idsToDelete = action.payload;
       if (idsToDelete.length === 0) return;
 
-      // A. 모든 요소들의 children 배열에서 삭제할 ID를 제거
-      // (부모가 누구였든 상관없이 확실하게 끊어냄)
-      state.elements.forEach(el => {
+      // Remove references from ALL parents' children arrays
+      state.elements.forEach((el) => {
         if (el.children && el.children.length > 0) {
-          el.children = el.children.filter(childId => !idsToDelete.includes(childId));
+          el.children = el.children.filter(
+            (childId) => !idsToDelete.includes(childId)
+          );
         }
       });
 
-      // B. 요소 목록에서 삭제 (자신 제거)
-      state.elements = state.elements.filter(el => !idsToDelete.includes(el.elementId));
+      // Remove the elements themselves
+      state.elements = state.elements.filter(
+        (el) => !idsToDelete.includes(el.elementId)
+      );
     },
 
-    // ⭐ [핵심 수정] 그룹화 (중복 키 에러 해결)
-    groupElements: (state, action: PayloadAction<{ newGroup: EditorElement, memberIds: string[] }>) => {
+    // ⭐ 6. Group Elements (Fix Duplicate Keys)
+    groupElements: (
+      state,
+      action: PayloadAction<{ newGroup: EditorElement; memberIds: string[] }>
+    ) => {
       const { newGroup, memberIds } = action.payload;
       if (memberIds.length === 0) return;
 
-      // 1. [준비] 새 그룹을 먼저 State에 등록
-      // (아직 자식은 비어있음)
-      state.elements.push(newGroup);
+      // A. Detach members from ANY existing parent
+      state.elements.forEach((parent) => {
+        if (parent.children && parent.children.length > 0) {
+          parent.children = parent.children.filter(
+            (childId) => !memberIds.includes(childId)
+          );
+        }
+      });
 
-      // 2. [연결] 새 그룹을 현재 활성 컨테이너(부모)의 자식으로 등록
-      const groupParent = state.elements.find(el => el.elementId === newGroup.parentId);
-      if (groupParent) {
-        groupParent.children.push(newGroup.elementId);
+      // B. Add new group
+      if (!state.elements.find((e) => e.elementId === newGroup.elementId)) {
+        state.elements.push(newGroup);
       }
 
-      // 3. [이동] 멤버들을 하나씩 처리 (기존 부모에서 제거 -> 새 그룹으로 이동)
+      // C. Attach group to current parent
+      const groupParent = state.elements.find(
+        (el) => el.elementId === newGroup.parentId
+      );
+      if (groupParent) {
+        if (!groupParent.children.includes(newGroup.elementId)) {
+          groupParent.children.push(newGroup.elementId);
+        }
+      }
+
+      // D. Move members into group
       const groupLeft = parseFloat(newGroup.props.left);
       const groupTop = parseFloat(newGroup.props.top);
 
-      // Immer를 쓰므로 state.elements를 직접 수정해도 안전함
-      // 하지만 forEach 돌면서 splice 하면 인덱스가 꼬일 수 있으므로 주의
-      // 여기서는 요소 자체를 수정하므로 괜찮음.
+      const addedGroup = state.elements.find(
+        (el) => el.elementId === newGroup.elementId
+      );
 
-      // 멤버 ID들을 순회하며 처리
-      memberIds.forEach(memberId => {
-          const member = state.elements.find(el => el.elementId === memberId);
-          if (!member) return;
+      memberIds.forEach((memberId) => {
+        const el = state.elements.find((e) => e.elementId === memberId);
+        if (el && addedGroup) {
+          el.parentId = newGroup.elementId;
 
-          // A. 기존 부모 찾아서 자식 목록에서 제거
-          if (member.parentId) {
-              const oldParent = state.elements.find(p => p.elementId === member.parentId);
-              if (oldParent) {
-                  const idx = oldParent.children.indexOf(memberId);
-                  if (idx > -1) {
-                      oldParent.children.splice(idx, 1); // 확실하게 제거
-                  }
-              }
+          if (!addedGroup.children.includes(el.elementId)) {
+            addedGroup.children.push(el.elementId);
           }
 
-          // B. 멤버의 부모를 새 그룹으로 변경
-          member.parentId = newGroup.elementId;
+          // Adjust coordinates to be relative to group
+          const oldLeft = parseFloat(el.props.left || 0);
+          const oldTop = parseFloat(el.props.top || 0);
+          el.props.left = `${oldLeft - groupLeft}px`;
+          el.props.top = `${oldTop - groupTop}px`;
+        }
+      });
+    },
 
-          // C. 좌표 보정 (절대 -> 상대)
-          const oldLeft = parseFloat(member.props.left || 0);
-          const oldTop = parseFloat(member.props.top || 0);
-          member.props.left = `${oldLeft - groupLeft}px`;
-          member.props.top = `${oldTop - groupTop}px`;
+    // 7. Ungroup Elements
+    ungroupElements: (state, action: PayloadAction<string[]>) => {
+      const groupIds = action.payload;
+      const groupsToDelete: string[] = [];
+
+      groupIds.forEach((groupId) => {
+        const group = state.elements.find((el) => el.elementId === groupId);
+        if (group && group.type === "Box") {
+          const parent = state.elements.find(
+            (el) => el.elementId === group.parentId
+          );
+
+          if (parent) {
+            const groupLeft = parseFloat(group.props.left || 0);
+            const groupTop = parseFloat(group.props.top || 0);
+
+            group.children.forEach((childId) => {
+              const child = state.elements.find(
+                (el) => el.elementId === childId
+              );
+              if (child) {
+                child.parentId = parent.elementId;
+
+                const childLeft = parseFloat(child.props.left || 0);
+                const childTop = parseFloat(child.props.top || 0);
+                child.props.left = `${groupLeft + childLeft}px`;
+                child.props.top = `${groupTop + childTop}px`;
+
+                if (!parent.children.includes(childId)) {
+                  parent.children.push(childId);
+                }
+              }
+            });
+            // Remove group from parent
+            parent.children = parent.children.filter((id) => id !== groupId);
+            groupsToDelete.push(groupId);
+          }
+        }
       });
 
-      // 4. [완료] 새 그룹의 자식 목록 채우기 (한방에)
-      // (위 루프에서 push하지 않고, 여기서 한 번에 할당하여 반응성 최적화)
-      const addedGroup = state.elements.find(el => el.elementId === newGroup.elementId);
-      if (addedGroup) {
-          addedGroup.children = [...memberIds];
+      // Delete group elements
+      state.elements = state.elements.filter(
+        (el) => !groupsToDelete.includes(el.elementId)
+      );
+    },
+
+    // Setters
+    setElements: (state, action: PayloadAction<EditorElement[]>) => {
+      state.elements = action.payload;
+    },
+    updateElementProps: (
+      state,
+      action: PayloadAction<{ id: string; props: any }>
+    ) => {
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el)
+        Object.entries(action.payload.props).forEach(([k, v]) =>
+          v === undefined ? delete el.props[k] : (el.props[k] = v)
+        );
+    },
+    updateElementAttributes: (
+      state,
+      action: PayloadAction<{ id: string; name: string; value: string }>
+    ) => {
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el) {
+        if (action.payload.name === "id") el.id = action.payload.value;
+        if (action.payload.name === "className")
+          el.className = action.payload.value;
       }
     },
 
-    setElements: (state, action: PayloadAction<EditorElement[]>) => { state.elements = action.payload; },
-    updateElementProps: (state, action: PayloadAction<{ id: string, props: any }>) => {
-      const el = state.elements.find(e => e.elementId === action.payload.id);
-      if (el) Object.entries(action.payload.props).forEach(([k, v]) => v === undefined ? delete el.props[k] : el.props[k] = v);
-    },
-    updateElementAttributes: (state, action: PayloadAction<{ id: string, name: string, value: string }>) => {
-      const el = state.elements.find(e => e.elementId === action.payload.id);
+    // 요소 크기 및 위치 업데이트 (단일/그룹 본체용)
+    resizeElement: (
+      state,
+      action: PayloadAction<{id: string; left: number; top: number; width: number; height: number; }>
+    ) => {
+      const { id, left, top, width, height } = action.payload;
+      const el = state.elements.find((e) => e.elementId === id);
       if (el) {
-        if (action.payload.name === 'id') el.id = action.payload.value;
-        if (action.payload.name === 'className') el.className = action.payload.value;
+        el.props.left = `${left}px`;
+        el.props.top = `${top}px`;
+        el.props.width = `${width}px`;
+        el.props.height = `${height}px`;
       }
     },
+
+    // 앵커 포인트 설정
+    setElementAnchor: (
+      state,
+      action: PayloadAction<{ id: string; x: number; y: number }>
+    ) => {
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el) {
+        el.props.anchorX = action.payload.x;
+        el.props.anchorY = action.payload.y;
+      }
+    },
+
+    // 그룹 스케일링 (자식들까지 비율대로 조절)
+    scaleGroupChildren: (
+      state,
+      action: PayloadAction<{ groupId: string; scaleX: number; scaleY: number }>
+    ) => {
+      const { groupId, scaleX, scaleY } = action.payload;
+
+      // 재귀적으로 자식들 업데이트
+      const updateChildren = (parentId: string) => {
+        const children = state.elements.filter(
+          (el) => el.parentId === parentId
+        );
+
+        children.forEach((child) => {
+          // 1. 위치 보정 (상대 좌표 * 스케일)
+          const oldLeft = parseFloat(child.props.left || 0);
+          const oldTop = parseFloat(child.props.top || 0);
+          child.props.left = `${oldLeft * scaleX}px`;
+          child.props.top = `${oldTop * scaleY}px`;
+
+          // 2. 크기 보정
+          const oldWidth = parseFloat(child.props.width || 0);
+          const oldHeight = parseFloat(child.props.height || 0);
+
+          // 텍스트/이미지 등 자동 크기가 아닌 경우만
+          if (oldWidth) child.props.width = `${oldWidth * scaleX}px`;
+          if (oldHeight) child.props.height = `${oldHeight * scaleY}px`;
+
+          // 3. 폰트 사이즈 보정 (단순하게 scaleY 기준 or 평균)
+          if (child.type === "Text") {
+            const oldFontSize = parseFloat(child.props.fontSize || 16);
+            // 텍스트는 보통 높이 비율을 따라감
+            child.props.fontSize = `${oldFontSize * scaleY}px`;
+          }
+
+          // 4. 재귀 호출 (자식의 자식)
+          if (child.type === "Box") {
+            updateChildren(child.elementId);
+          }
+        });
+      };
+
+      updateChildren(groupId);
+    },
+
     addScriptToElement: (state, action) => {
-        const el = state.elements.find(e => e.elementId === action.payload.id);
-        if (el && !el.scripts?.includes(action.payload.scriptName)) el.scripts = [...(el.scripts || []), action.payload.scriptName];
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el && !el.scripts?.includes(action.payload.scriptName))
+        el.scripts = [...(el.scripts || []), action.payload.scriptName];
     },
     removeScriptFromElement: (state, action) => {
-        const el = state.elements.find(e => e.elementId === action.payload.id);
-        if (el) el.scripts = el.scripts?.filter(s => s !== action.payload.scriptName);
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el)
+        el.scripts = el.scripts?.filter((s) => s !== action.payload.scriptName);
     },
     updateScriptValue: (state, action) => {
-        const el = state.elements.find(e => e.elementId === action.payload.id);
-        if (el) {
-            if (!el.scriptValues) el.scriptValues = {};
-            if (!el.scriptValues[action.payload.scriptName]) el.scriptValues[action.payload.scriptName] = {};
-            el.scriptValues[action.payload.scriptName][action.payload.fieldName] = action.payload.value;
-        }
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el) {
+        if (!el.scriptValues) el.scriptValues = {};
+        if (!el.scriptValues[action.payload.scriptName])
+          el.scriptValues[action.payload.scriptName] = {};
+        el.scriptValues[action.payload.scriptName][action.payload.fieldName] =
+          action.payload.value;
+      }
     },
     resetScriptValues: (state, action) => {
-        const el = state.elements.find(e => e.elementId === action.payload.id);
-        if (el && el.scriptValues) el.scriptValues[action.payload.scriptName] = {};
+      const el = state.elements.find((e) => e.elementId === action.payload.id);
+      if (el && el.scriptValues)
+        el.scriptValues[action.payload.scriptName] = {};
     },
   },
 });
 
-export const { 
-  addElement, setElements, updateElementProps, updateElementAttributes,
-  addScriptToElement, removeScriptFromElement, updateScriptValue, resetScriptValues,
-  moveElements, deleteElements, groupElements 
+export const {
+  addElement,
+  addElements,
+  setElements,
+  updateElementProps,
+  updateElementAttributes,
+  addScriptToElement,
+  removeScriptFromElement,
+  updateScriptValue,
+  resetScriptValues,
+  moveElements,
+  setElementsPositions,
+  deleteElements,
+  groupElements,
+  ungroupElements,
+  resizeElement, 
+  setElementAnchor, 
+  scaleGroupChildren
 } = elementSlice.actions;
 
 export default elementSlice.reducer;

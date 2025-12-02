@@ -3,7 +3,19 @@
 // =============================================================================
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 3.0;
+// 룰러(자) 두께 (px)
 export const RULER_THICKNESS = 30;
+
+// 드래그로 간주할 최소 이동 거리 (px)
+export const DRAG_THRESHOLD = 3;
+
+// 박스 생성 최소 크기 (px)
+export const ELEMENT_MIN_SIZE = 20;
+
+// 다중 선택 박스 생성 최소 크기 (px)
+export const SELECTION_MIN_SIZE = 20;
+
+
 
 // =============================================================================
 // 2. GLOBAL VALUES (모든 속성에 공통적으로 들어갈 수 있는 값)

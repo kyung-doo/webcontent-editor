@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { MIN_ZOOM, MAX_ZOOM } from "../constants";
-import { CanvasSettings } from "../types/store";
+import { CanvasSettings, EditorElement } from "../types/store";
 
 interface CanvasState {
   canvasSettings: CanvasSettings;
@@ -8,6 +8,7 @@ interface CanvasState {
   selectedElementId: string | null; // 호환성용
   activeContainerId: string;
   currentTool: "select" | "scale" | "hand";
+  clipboard: EditorElement[];
 }
 
 const initialState: CanvasState = {
@@ -23,6 +24,7 @@ const initialState: CanvasState = {
   selectedElementId: null,
   activeContainerId: "root",
   currentTool: "select",
+  clipboard: []
 };
 
 export const canvasSlice = createSlice({
@@ -98,6 +100,9 @@ export const canvasSlice = createSlice({
       state.selectedIds = [];
       state.selectedElementId = null;
     },
+    copyToClipboard: (state, action: PayloadAction<EditorElement[]>) => {
+      state.clipboard = action.payload;
+    },
   },
 });
 
@@ -109,6 +114,7 @@ export const {
   setActiveContainer,
   setTool,
   setCanvasState,
+  copyToClipboard
 } = canvasSlice.actions;
 
 export default canvasSlice.reducer;

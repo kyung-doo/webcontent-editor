@@ -7,8 +7,9 @@ import React, {
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../store/store";
-import { selectElement, enterContainer } from "../store/canvasSlice";
+import { enterContainer } from "../store/canvasSlice";
 import { loadScript } from "../utils/scriptManager";
+import { ELEMENT_MIN_SIZE } from "../constants";
 
 interface RuntimeElementProps {
   elementId: string;
@@ -24,24 +25,21 @@ export default function RuntimeElement({
   const dispatch = useDispatch();
   const domRef = useRef<HTMLDivElement>(null);
 
-  // 1. Redux Data
   const element = useSelector((state: RootState) =>
     state.elements.elements.find((el) => el.elementId === elementId)
   );
   const allElements = useSelector(
     (state: RootState) => state.elements.elements
   );
-  const { selectedElementId, selectedIds, activeContainerId, canvasSettings } =
+  const { selectedIds, selectedElementId, activeContainerId, canvasSettings } =
     useSelector((state: RootState) => state.canvas);
 
-  // 2. Status Check
-  const isSelected = selectedIds.includes(elementId);
-  const isMultiSelectionActive = selectedIds.length > 1; // 다중 선택 모드
-
+  const isSelected =
+    selectedIds.includes(elementId) || selectedElementId === elementId;
+  const isMultiSelectionActive = selectedIds.length > 1;
   const isActiveContainer = elementId === activeContainerId;
   const isPreview = mode === "preview";
 
-  // --- 상호작용 로직 ---
   const isDirectChild = element?.parentId === activeContainerId;
 
   const isAncestor = useMemo(() => {
@@ -56,7 +54,6 @@ export default function RuntimeElement({
 
   const isFocused = isActiveContainer || isInsideActive;
   const isRootMode = activeContainerId === "root";
-
   const isDimmed = !isPreview && !isRootMode && !isFocused && !isAncestor;
 
   const canInteract =
@@ -67,12 +64,8 @@ export default function RuntimeElement({
     : isActiveContainer
     ? "auto"
     : "none";
-
   const shouldHideVisuals = !isPreview && (isActiveContainer || isAncestor);
 
-  // --------------------------------------------------------------------------
-  // 📐 Hit Area Calculation
-  // --------------------------------------------------------------------------
   const [hitAreaRect, setHitAreaRect] = useState<{
     left: number;
     top: number;
@@ -91,44 +84,32 @@ export default function RuntimeElement({
       setHitAreaRect(null);
       return;
     }
-
     const measureGroup = () => {
       const parentRect = domRef.current!.getBoundingClientRect();
       const zoom = canvasSettings.zoom || 1;
-
-      // ⭐ [수정] 초기값을 '부모(나 자신)의 실제 렌더링 크기'로 설정
-      // 이렇게 하면 자식이 작아도 부모 크기만큼은 선택 영역이 보장됨
       let minX = 0;
       let minY = 0;
-      let maxX = parentRect.width / zoom;
-      let maxY = parentRect.height / zoom;
-
+      let maxX = parseFloat(element.props.width) || 50;
+      let maxY = parseFloat(element.props.height) || 50;
       const allDescendants = domRef.current!.querySelectorAll("[data-id]");
-
+      let hasValidChild = false;
       allDescendants.forEach((node) => {
-        if (node === domRef.current) return; // 나 자신은 이미 초기값으로 반영됨
-
+        if (node === domRef.current) return;
+        hasValidChild = true;
         const childRect = node.getBoundingClientRect();
-
-        // 줌 보정된 상대 좌표
         const relLeft = (childRect.left - parentRect.left) / zoom;
         const relTop = (childRect.top - parentRect.top) / zoom;
         const relWidth = childRect.width / zoom;
         const relHeight = childRect.height / zoom;
-
         const relRight = relLeft + relWidth;
         const relBottom = relTop + relHeight;
-
-        // 영역 확장 (Union)
-        // 자식이 부모보다 튀어나가면 확장하고, 아니면 부모 크기 유지
         minX = Math.min(minX, relLeft);
         minY = Math.min(minY, relTop);
         maxX = Math.max(maxX, relRight);
         maxY = Math.max(maxY, relBottom);
       });
-
-      // 패딩 추가
-      const P = 4;
+      if (!hasValidChild) return;
+      const P = 0;
       setHitAreaRect({
         left: minX - P,
         top: minY - P,
@@ -136,15 +117,11 @@ export default function RuntimeElement({
         height: maxY - minY + P * 2,
       });
     };
-
     measureGroup();
     const timer = setTimeout(measureGroup, 100);
     return () => clearTimeout(timer);
   }, [element, allElements, isPreview, activeContainerId, canvasSettings.zoom]);
 
-  // --------------------------------------------------------------------------
-  // 🟢 Script Engine
-  // --------------------------------------------------------------------------
   const latestDataRef = useRef({
     props: element?.props,
     scriptValues: element?.scriptValues,
@@ -158,17 +135,14 @@ export default function RuntimeElement({
   }, [element?.props, element?.scriptValues]);
   const requestRef = useRef<number>();
   const modulesRef = useRef<any[]>([]);
-
   useEffect(() => {
     if (!element || !isPreview || !element.scripts || !domRef.current) return;
-
     let isCleanedUp = false;
     const runScripts = async () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
       modulesRef.current = [];
       const loadedList: any[] = [];
       const processed = new Set<string>();
-
       for (const scriptPath of element.scripts!) {
         if (isCleanedUp) return;
         if (processed.has(scriptPath)) continue;
@@ -187,10 +161,8 @@ export default function RuntimeElement({
           }
         } catch (e) {}
       }
-
       if (isCleanedUp) return;
       modulesRef.current = loadedList;
-
       modulesRef.current.forEach(({ instance, defaultFields, path }) => {
         if (instance.onStart) {
           const currentVals = latestDataRef.current.scriptValues?.[path] || {};
@@ -209,7 +181,6 @@ export default function RuntimeElement({
           } catch (e) {}
         }
       });
-
       let lastTime = performance.now();
       const loop = (time: number) => {
         if (isCleanedUp) return;
@@ -252,14 +223,11 @@ export default function RuntimeElement({
     };
   }, [JSON.stringify(element?.scripts), isPreview]);
 
-  // --- Event Handlers ---
   const handleClick = (e: React.MouseEvent) => {
     if (!isPreview && canInteract) {
       e.stopPropagation();
-      // Selection logic handled by Canvas MouseDown/Up
     }
   };
-
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!isPreview && element?.type === "Box" && canInteract) {
       e.stopPropagation();
@@ -269,21 +237,17 @@ export default function RuntimeElement({
 
   if (!element) return null;
 
-  // --------------------------------------------------------------------------
-  // 🎨 Rendering
-  // --------------------------------------------------------------------------
   const finalStyle: React.CSSProperties = {
     left: element.props.left,
     top: element.props.top,
     width: element.props.width || "auto",
     height: element.props.height || "auto",
-    padding: element.type === "Image" ? 0 : "20px",
-    backgroundColor: element.props.backgroundColor || "transparent",
-    minWidth: element.type === "Image" ? "auto" : "50px",
-    minHeight: element.type === "Image" ? "auto" : "50px",
+    // padding: element.type === "Image" ? 0 : "20px",
+    backgroundColor: element.props.backgroundColor || "",
+    minWidth: element.type === "Image" ? "auto" : `${ELEMENT_MIN_SIZE}px`,
+    minHeight: element.type === "Image" ? "auto" : `${ELEMENT_MIN_SIZE}px`,
     ...element.props,
-
-    opacity: isDimmed ? 0.3 : 1, // 흐림 처리 (회색조 X, 투명도만)
+    opacity: isDimmed ? 0.3 : 1,
     filter: "none",
     pointerEvents: pointerEvents as any,
     zIndex: isActiveContainer ? 100 : element.props.zIndex || "auto",
@@ -297,8 +261,6 @@ export default function RuntimeElement({
     finalStyle.backgroundImage = "none";
   }
 
-  // ⭐ [조건] 다중 선택 중이면 개별 테두리 그리지 않음
-  // 단일 선택일 때만 그룹 테두리 or 일반 테두리 표시
   const showGroupBorder =
     !isMultiSelectionActive &&
     !isPreview &&
@@ -349,20 +311,6 @@ export default function RuntimeElement({
 
       {element.type === "Box" && (
         <>
-          {/* ⭐ [중요] Hit Area에 class='group-hit-area' 추가 */}
-          {/* Canvas.tsx에서 드래그 충돌 검사 시 이 클래스를 찾아서 포함시킴 */}
-          {!isPreview && !isActiveContainer && canInteract && hitAreaRect && (
-            <div
-              className="absolute z-0 pointer-events-auto group-hit-area" // 👈 클래스 추가
-              style={{
-                left: hitAreaRect.left,
-                top: hitAreaRect.top,
-                width: hitAreaRect.width,
-                height: hitAreaRect.height,
-              }}
-            />
-          )}
-
           <div
             style={{
               display: "contents",
@@ -378,6 +326,19 @@ export default function RuntimeElement({
               />
             ))}
           </div>
+
+          {/* ⭐ [복구됨] Hit Area: 자식들보다 위에 배치 (z-20) */}
+          {!isPreview && !isActiveContainer && canInteract && hitAreaRect && (
+            <div
+              className="absolute z-20 pointer-events-auto group-hit-area"
+              style={{
+                left: hitAreaRect.left,
+                top: hitAreaRect.top,
+                width: hitAreaRect.width,
+                height: hitAreaRect.height,
+              }}
+            />
+          )}
 
           {!isPreview &&
             (!element.children || element.children.length === 0) &&
@@ -404,7 +365,6 @@ export default function RuntimeElement({
         </>
       )}
 
-      {/* Borders (단일 선택일 때만 렌더링) */}
       {showGroupBorder && hitAreaRect && (
         <div
           className="absolute pointer-events-none z-50 border-2 border-blue-500 border-dashed bg-blue-50/5 rounded-sm"
