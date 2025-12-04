@@ -10,7 +10,7 @@ export default class Tabmenu {
 
   // 1. 시작 (초기화)
   onStart (el, props, fields) {
-    this.menus = fields.menus.map(id => el.querySelector(`#${id}`));
+    this.menus = fields.menuIds.map(id => el.querySelector(`#${id}`));
     const handle = this.clickHandler.bind(this);
     this.menus.forEach((menu, i) => {
       menu.defaultColor = menu.style.backgroundColor;

@@ -232,37 +232,6 @@ export const elementSlice = createSlice({
       });
     },
 
-    // ⭐ 리사이즈 (단일)
-    resizeElement: (
-      state,
-      action: PayloadAction<{
-        id: string;
-        left: number;
-        top: number;
-        width: number;
-        height: number;
-      }>
-    ) => {
-      const { id, left, top, width, height } = action.payload;
-      const el = state.elements.find((e) => e.elementId === id);
-      if (el) {
-        const oldW = parseFloat(el.props.width) || width;
-        const oldH = parseFloat(el.props.height) || height;
-        const scaleX = oldW !== 0 ? width / oldW : 1;
-        const scaleY = oldH !== 0 ? height / oldH : 1;
-
-        el.props.left = `${left}px`;
-        el.props.top = `${top}px`;
-        el.props.width = `${width}px`;
-        el.props.height = `${height}px`;
-
-        // 자식 스케일링
-        if (el.children.length > 0) {
-          resizeChildrenRecursively(state.elements, id, scaleX, scaleY);
-        }
-      }
-    },
-
     // ⭐ 리사이즈 (다중 - 배치)
     resizeElements: (
       state,
@@ -274,29 +243,58 @@ export const elementSlice = createSlice({
           width: number;
           height: number;
           fontSize?: number;
+          initialWidth?: number;
+          initialHeight?: number; // 👈 Canvas에서 넘겨준 실제 픽셀값
         }[]
       >
     ) => {
-      action.payload.forEach(({ id, left, top, width, height, fontSize }) => {
-        const el = state.elements.find((e) => e.elementId === id);
-        if (el) {
-          const oldW = parseFloat(el.props.width) || width;
-          const oldH = parseFloat(el.props.height) || height;
-          const scaleX = oldW !== 0 ? width / oldW : 1;
-          const scaleY = oldH !== 0 ? height / oldH : 1;
+      action.payload.forEach(
+        ({
+          id,
+          left,
+          top,
+          width,
+          height,
+          fontSize,
+          initialWidth,
+          initialHeight,
+        }) => {
+          const el = state.elements.find((e) => e.elementId === id);
+          if (el) {
+            let oldW = parseFloat(el.props.width ?? 0);
+            let oldH = parseFloat(el.props.height ?? 0);
 
-          el.props.left = `${left}px`;
-          el.props.top = `${top}px`;
-          el.props.width = `${width}px`;
-          el.props.height = `${height}px`;
-          if (fontSize !== undefined && el.type === "Text")
-            el.props.fontSize = `${fontSize}px`;
+            const wStr = String(el.props.width);
+            const hStr = String(el.props.height);
 
-          if (el.children.length > 0) {
-            resizeChildrenRecursively(state.elements, id, scaleX, scaleY);
+            // %나 auto일 경우, 실제 픽셀값(initialWidth)을 기준점으로 삼음
+            if (wStr.includes("%") || wStr === "auto") {
+              oldW = initialWidth || width; // initialWidth가 없으면 현재 바뀐 width라도 씀
+            }
+            if (hStr.includes("%") || hStr === "auto") {
+              oldH = initialHeight || height;
+            }
+
+            // 2. 스케일 계산 (0 나누기 방지)
+            const scaleX = oldW !== 0 ? width / oldW : 1;
+            const scaleY = oldH !== 0 ? height / oldH : 1;
+
+            // 3. 부모 속성 업데이트
+            el.props.left = `${left}px`;
+            el.props.top = `${top}px`;
+            el.props.width = `${width}px`;
+            el.props.height = `${height}px`;
+
+            if (fontSize !== undefined && el.type === "Text") {
+              el.props.fontSize = `${fontSize}px`;
+            }
+
+            if (el.children.length > 0) {
+              resizeChildrenRecursively(state.elements, id, scaleX, scaleY);
+            }
           }
         }
-      });
+      );
     },
 
     setElementsPositions: (
@@ -389,7 +387,6 @@ export const {
   deleteElements,
   groupElements,
   ungroupElements,
-  resizeElement,
   resizeElements,
   setElementAnchor,
 } = elementSlice.actions;

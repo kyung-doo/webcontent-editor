@@ -7,35 +7,29 @@ import React, {
   useLayoutEffect,
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import Ruler from "@scena/react-ruler";
 import { RootState } from "../store/store";
 import {
   updateCanvasSettings,
   selectElement,
   selectMultipleElements,
-  enterContainer,
   setActiveContainer,
   setTool,
   copyToClipboard,
 } from "../store/canvasSlice";
 import {
   addElement,
-  moveElements,
   deleteElements,
   groupElements,
   ungroupElements,
   addElements,
   EditorElement,
   setElementsPositions,
-  resizeElement,
   resizeElements,
   setElementAnchor,
 } from "../store/elementSlice";
 
 import RuntimeElement from "./RuntimeElement";
 import {
-  MIN_ZOOM,
-  MAX_ZOOM,
   RULER_THICKNESS,
   ELEMENT_MIN_SIZE,
   DRAG_THRESHOLD,
@@ -60,11 +54,24 @@ export default function Canvas() {
   } = useSelector((state: RootState) => state.canvas);
   const dispatch = useDispatch();
 
-  // Refs for Event Listeners (Stale Closure 방지)
+  // ⭐ Refs for Event Listeners (최신 상태 참조용)
   const elementsRef = useRef(elements);
+  const selectedIdsRef = useRef(selectedIds);
+  const activeContainerIdRef = useRef(activeContainerId); // ⭐ 추가됨
+  const canvasSettingsRef = useRef(canvasSettings);
+
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+  useEffect(() => {
+    activeContainerIdRef.current = activeContainerId;
+  }, [activeContainerId]); // ⭐ 동기화
+  useEffect(() => {
+    canvasSettingsRef.current = canvasSettings;
+  }, [canvasSettings]);
 
   // 2. Active Context
   const rootElement = elements.find((el) => el.elementId === "root");
@@ -72,7 +79,7 @@ export default function Canvas() {
     (el) => el.elementId === activeContainerId
   );
 
-  // 3. Refs
+  // 3. DOM Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +89,6 @@ export default function Canvas() {
   const didMouseMoveRef = useRef(false);
   const justSelectedRef = useRef<string | null>(null);
 
-  // Move & Clone Refs
   const originalPositionsRef = useRef<{
     [id: string]: { left: number; top: number };
   }>({});
@@ -136,13 +142,23 @@ export default function Canvas() {
     w: number;
     h: number;
   } | null>(null);
+  const [selectionBounds, setSelectionBounds] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [startScroll, setStartScroll] = useState({ x: 0, y: 0 });
-
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const [groupAnchor, setGroupAnchor] = useState({ x: 0.5, y: 0.5 });
+  useEffect(() => {
+    setGroupAnchor({ x: 0.5, y: 0.5 });
+  }, [selectedIds]);
 
   // Active Offset
   const activeOffset = useMemo(() => {
@@ -161,7 +177,6 @@ export default function Canvas() {
     return { x, y };
   }, [activeContainerId, elements]);
 
-  // Init Center
   const centerCanvas = useCallback(() => {
     if (containerRef.current) {
       const { clientWidth, clientHeight } = containerRef.current;
@@ -348,17 +363,19 @@ export default function Canvas() {
     };
   }, [selectedIds, elements, activeContainerId, dispatch, clipboard]);
 
-  // Selection Bounds
-  const selectionBounds = useMemo(() => {
-    if (selectedIds.length === 0) return null;
-    if (!paperRef.current) return null;
+  // Bounds Calculation
+  useLayoutEffect(() => {
+    if (selectedIds.length === 0 || !paperRef.current) {
+      setSelectionBounds(null);
+      return;
+    }
+    const zoom = canvasSettings.zoom;
+    const paperRect = paperRef.current.getBoundingClientRect();
     let minX = Infinity,
       minY = Infinity,
       maxX = -Infinity,
       maxY = -Infinity;
     let hasValid = false;
-    const zoom = canvasSettings.zoom;
-    const paperRect = paperRef.current.getBoundingClientRect();
     const expandByNode = (node: Element) => {
       const r = node.getBoundingClientRect();
       const lx = (r.left - paperRect.left) / zoom;
@@ -379,18 +396,30 @@ export default function Canvas() {
         descendants.forEach((child) => expandByNode(child));
       }
     });
-    if (!hasValid) return null;
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    if (hasValid)
+      setSelectionBounds({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+    else setSelectionBounds(null);
   }, [selectedIds, elements, canvasSettings.zoom]);
 
-  // ⭐ [복구됨] Current Anchor
+  // Anchor
   const currentAnchor = useMemo(() => {
     if (selectedIds.length === 1) {
       const el = elements.find((e) => e.elementId === selectedIds[0]);
       return { x: el?.props.anchorX ?? 0.5, y: el?.props.anchorY ?? 0.5 };
     }
-    return { x: 0.5, y: 0.5 };
-  }, [selectedIds, elements]);
+    return groupAnchor;
+  }, [selectedIds, elements, groupAnchor]);
+
+  const handleAnchorUpdate = useCallback(
+    (x: number, y: number) => {
+      if (selectedIdsRef.current.length === 1) {
+        dispatch(setElementAnchor({ id: selectedIdsRef.current[0], x, y }));
+      } else if (selectedIdsRef.current.length > 1) {
+        setGroupAnchor({ x, y });
+      }
+    },
+    [dispatch]
+  );
 
   // Resize Start
   const handleResizeStart = (e: React.MouseEvent, direction: string) => {
@@ -400,7 +429,6 @@ export default function Canvas() {
     const zoom = canvasSettings.zoom;
     const paperRect = paperRef.current.getBoundingClientRect();
 
-    // 1. Bounds (단일 선택 보정)
     let groupRect = selectionBounds || { x: 0, y: 0, w: 0, h: 0 };
     if (selectedIds.length === 1 && !selectionBounds) {
       const node = document.querySelector(`[data-id="${selectedIds[0]}"]`);
@@ -415,7 +443,6 @@ export default function Canvas() {
       }
     }
 
-    // 2. Anchor & Limit
     const anchorX = currentAnchor.x;
     const anchorY = currentAnchor.y;
     let limitWidth = ELEMENT_MIN_SIZE,
@@ -490,11 +517,6 @@ export default function Canvas() {
       snapshot,
     };
   };
-  const handleAnchorStart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    isMovingAnchorRef.current = true;
-  };
 
   // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -539,7 +561,9 @@ export default function Canvas() {
             ? [...selectedIds, id]
             : selectedIds;
           targetIds.forEach((sid) => {
-            const el = elements.find((item) => item.elementId === sid);
+            const el = elementsRef.current.find(
+              (item) => item.elementId === sid
+            );
             if (el)
               positions[sid] = {
                 left: parseFloat(el.props.left || 0),
@@ -637,6 +661,8 @@ export default function Canvas() {
             width: newW,
             height: newH,
             fontSize: newFontSize,
+            initialWidth: item.w,
+            initialHeight: item.h,
           };
         });
         dispatch(resizeElements(updates));
@@ -678,6 +704,7 @@ export default function Canvas() {
           }
           const moveX = dx - currentMoveDeltaRef.current.dx;
           const moveY = dy - currentMoveDeltaRef.current.dy;
+          
           if (e.altKey && !isCloningRef.current) {
             isCloningRef.current = true;
             const resetMoves = originalIdsRef.current
@@ -703,12 +730,14 @@ export default function Canvas() {
             clonedIdsRef.current = newIds;
             activeMovingIdsRef.current = newIds;
             dispatch(selectMultipleElements(newIds));
+            
             newIds.forEach((nid, i) => {
               const oid = originalIdsRef.current[i];
               if (originalPositionsRef.current[oid])
                 originalPositionsRef.current[nid] =
                   originalPositionsRef.current[oid];
             });
+            
           } else if (!e.altKey && isCloningRef.current) {
             isCloningRef.current = false;
             dispatch(deleteElements(clonedIdsRef.current));
@@ -764,10 +793,7 @@ export default function Canvas() {
         resizeStartDataRef.current = null;
         return;
       }
-      if (isMovingAnchorRef.current) {
-        isMovingAnchorRef.current = false;
-        return;
-      }
+
       if (isDraggingElement.current) {
         isDraggingElement.current = false;
         isCloningRef.current = false;
@@ -784,7 +810,7 @@ export default function Canvas() {
           if (
             id &&
             id !== justSelectedRef.current &&
-            selectedIds.includes(id)
+            selectedIdsRef.current.includes(id)
           ) {
             const isMulti = e.shiftKey || e.ctrlKey;
             dispatch(selectElement({ id, multiple: isMulti }));
@@ -792,6 +818,8 @@ export default function Canvas() {
         }
         currentMoveDeltaRef.current = { dx: 0, dy: 0 };
       }
+
+      // ⭐ [수정] activeContainerIdRef 사용 (Ref로 최신 ID 참조)
       if (isSelecting) {
         setIsSelecting(false);
         if (
@@ -812,7 +840,10 @@ export default function Canvas() {
               box.y + box.h > elY
             );
           };
-          activeContainer?.children.forEach((childId) => {
+          const currentActive = elementsRef.current.find(
+            (el) => el.elementId === activeContainerIdRef.current
+          );
+          currentActive?.children.forEach((childId) => {
             const rootNode = document.querySelector(
               `[data-id="${childId}"]`
             ) as HTMLElement;
@@ -854,15 +885,7 @@ export default function Canvas() {
       window.removeEventListener("mousemove", handleWindowMouseMove);
       window.removeEventListener("mouseup", handleWindowMouseUp);
     };
-  }, [
-    isPanning,
-    isSelecting,
-    selectedIds,
-    canvasSettings,
-    activeContainer,
-    dispatch,
-    elements,
-  ]);
+  }, [isPanning, isSelecting, dispatch, canvasSettings.zoom, elements]); // Refs 사용으로 의존성 최소화
 
   const handleCanvasClick = (e: React.MouseEvent) => {
     const dist = Math.sqrt(
@@ -946,14 +969,9 @@ export default function Canvas() {
             isInsideActive={activeContainerId === "root"}
           />
         ))}
-        {selectedIds.length > 1 && (
-          <SelectionGroupBorder
-            selectedIds={selectedIds}
-            paperRef={paperRef}
-            zoom={canvasSettings.zoom}
-          />
+        {selectedIds.length > 0 && (
+          <SelectionGroupBorder bounds={selectionBounds} />
         )}
-        {/* ⭐ TransformLayer (단일/다중 모두 표시, anchor 전달) */}
         {currentTool === "scale" &&
           selectedIds.length > 0 &&
           selectionBounds && (
@@ -961,7 +979,7 @@ export default function Canvas() {
               selectedBox={selectionBounds}
               anchor={currentAnchor}
               onResizeStart={handleResizeStart}
-              onAnchorStart={handleAnchorStart}
+              onAnchorUpdate={handleAnchorUpdate}
             />
           )}
       </CanvasControls>
