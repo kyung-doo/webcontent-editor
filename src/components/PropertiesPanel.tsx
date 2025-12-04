@@ -322,7 +322,7 @@ export default function PropertiesPanel() {
               Attributes
             </span>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-gray-500 font-bold w-8">#</span>
+              <span className="text-[10px] text-gray-500 font-bold w-8">ID</span>
               <input
                 type="text"
                 value={localId}
@@ -340,7 +340,7 @@ export default function PropertiesPanel() {
             </div>
             <div className="flex items-start gap-2 pt-1">
               <span className="text-[10px] text-gray-500 font-bold w-8 mt-1.5">
-                .
+                CLASS
               </span>
               <div className="flex-1 min-w-0">
                 <AutocompleteInput
@@ -362,9 +362,6 @@ export default function PropertiesPanel() {
           <div className="space-y-1 pb-4 pt-2">
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs font-bold text-gray-800">Styles</span>
-              <span className="text-[9px] text-gray-400">
-                element.style {"{"}
-              </span>
             </div>
             <div className="pl-2 border-l-2 border-gray-100">
               <div className="max-h-80 overflow-y-auto scrollbar-thin pr-1 mb-2">

@@ -63,7 +63,7 @@ export default function SelectionGroupBorder({
     });
 
     if (hasValid && minX !== Infinity) {
-      const P = 4;
+      const P = 0;
       setRect({
         x: minX - P,
         y: minY - P,

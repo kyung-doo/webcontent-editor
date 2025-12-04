@@ -28,6 +28,7 @@ import {
   EditorElement,
   setElementsPositions,
   resizeElement,
+  resizeElements,
   setElementAnchor,
 } from "../store/elementSlice";
 
@@ -48,6 +49,7 @@ import CanvasControls from "./CanvasControls";
 import TransformLayer from "./TransformLayer";
 
 export default function Canvas() {
+  // 1. Redux State
   const { elements } = useSelector((state: RootState) => state.elements);
   const {
     selectedIds,
@@ -58,12 +60,19 @@ export default function Canvas() {
   } = useSelector((state: RootState) => state.canvas);
   const dispatch = useDispatch();
 
+  // Refs for Event Listeners (Stale Closure 방지)
+  const elementsRef = useRef(elements);
+  useEffect(() => {
+    elementsRef.current = elements;
+  }, [elements]);
+
+  // 2. Active Context
   const rootElement = elements.find((el) => el.elementId === "root");
   const activeContainer = elements.find(
     (el) => el.elementId === activeContainerId
   );
 
-  // Refs
+  // 3. Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +82,7 @@ export default function Canvas() {
   const didMouseMoveRef = useRef(false);
   const justSelectedRef = useRef<string | null>(null);
 
+  // Move & Clone Refs
   const originalPositionsRef = useRef<{
     [id: string]: { left: number; top: number };
   }>({});
@@ -82,21 +92,33 @@ export default function Canvas() {
   const isCloningRef = useRef(false);
   const currentMoveDeltaRef = useRef({ dx: 0, dy: 0 });
 
-  // ⭐ Resize & Anchor Refs
+  // Resize & Anchor Refs
   const isResizingRef = useRef(false);
   const isMovingAnchorRef = useRef(false);
   const resizeStartDataRef = useRef<{
     startX: number;
     startY: number;
-    startLeft: number;
-    startTop: number;
-    startWidth: number;
-    startHeight: number;
+    groupStartLeft: number;
+    groupStartTop: number;
+    groupStartWidth: number;
+    groupStartHeight: number;
     anchorX: number;
-    anchorY: number; // 0~1 (상대 좌표)
+    anchorY: number;
+    anchorScreenX: number;
+    anchorScreenY: number;
     limitWidth: number;
     limitHeight: number;
     direction: string;
+    snapshot: {
+      id: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      fontSize?: number;
+      distX: number;
+      distY: number;
+    }[];
   } | null>(null);
 
   const selectionBoxRef = useRef<{
@@ -106,7 +128,7 @@ export default function Canvas() {
     h: number;
   } | null>(null);
 
-  // States
+  // 4. States
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionBox, setSelectionBox] = useState<{
     x: number;
@@ -139,8 +161,7 @@ export default function Canvas() {
     return { x, y };
   }, [activeContainerId, elements]);
 
-  // Init
-  const handleResize = useCallback(() => {}, []);
+  // Init Center
   const centerCanvas = useCallback(() => {
     if (containerRef.current) {
       const { clientWidth, clientHeight } = containerRef.current;
@@ -188,14 +209,16 @@ export default function Canvas() {
         ...el,
         elementId: newId,
         id: "",
-        parentId,
+        parentId: parentId,
         children: [],
         props: { ...el.props, left: newLeft, top: newTop },
       };
       newElements.push(newEl);
       if (el.children) {
         el.children.forEach((childId) => {
-          const child = elements.find((e) => e.elementId === childId);
+          const child = elementsRef.current.find(
+            (e) => e.elementId === childId
+          );
           if (child) {
             const newChild = cloneRecursive(child, newId, false);
             newEl.children.push(newChild.elementId);
@@ -262,7 +285,6 @@ export default function Canvas() {
         e.preventDefault();
         setIsSpacePressed(true);
       }
-
       if (
         (e.key === "Delete" || e.key === "Backspace") &&
         selectedIds.length > 0
@@ -326,55 +348,146 @@ export default function Canvas() {
     };
   }, [selectedIds, elements, activeContainerId, dispatch, clipboard]);
 
-  // ----------------------------------------------------------------
-  // ⭐ Resize Start
-  // ----------------------------------------------------------------
+  // Selection Bounds
+  const selectionBounds = useMemo(() => {
+    if (selectedIds.length === 0) return null;
+    if (!paperRef.current) return null;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    let hasValid = false;
+    const zoom = canvasSettings.zoom;
+    const paperRect = paperRef.current.getBoundingClientRect();
+    const expandByNode = (node: Element) => {
+      const r = node.getBoundingClientRect();
+      const lx = (r.left - paperRect.left) / zoom;
+      const ly = (r.top - paperRect.top) / zoom;
+      const lw = r.width / zoom;
+      const lh = r.height / zoom;
+      minX = Math.min(minX, lx);
+      minY = Math.min(minY, ly);
+      maxX = Math.max(maxX, lx + lw);
+      maxY = Math.max(maxY, ly + lh);
+      hasValid = true;
+    };
+    selectedIds.forEach((id) => {
+      const node = document.querySelector(`[data-id="${id}"]`);
+      if (node) {
+        expandByNode(node);
+        const descendants = node.querySelectorAll("[data-id]");
+        descendants.forEach((child) => expandByNode(child));
+      }
+    });
+    if (!hasValid) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }, [selectedIds, elements, canvasSettings.zoom]);
+
+  // ⭐ [복구됨] Current Anchor
+  const currentAnchor = useMemo(() => {
+    if (selectedIds.length === 1) {
+      const el = elements.find((e) => e.elementId === selectedIds[0]);
+      return { x: el?.props.anchorX ?? 0.5, y: el?.props.anchorY ?? 0.5 };
+    }
+    return { x: 0.5, y: 0.5 };
+  }, [selectedIds, elements]);
+
+  // Resize Start
   const handleResizeStart = (e: React.MouseEvent, direction: string) => {
     e.stopPropagation();
     e.preventDefault();
-    if (selectedIds.length !== 1) return;
-    const id = selectedIds[0];
-    const node = document.querySelector(`[data-id="${id}"]`);
-    if (!node || !paperRef.current) return;
-
-    const rect = node.getBoundingClientRect();
-    const paperRect = paperRef.current.getBoundingClientRect();
+    if (selectedIds.length === 0 || !paperRef.current) return;
     const zoom = canvasSettings.zoom;
+    const paperRect = paperRef.current.getBoundingClientRect();
 
-    // 물리적 최소 크기 계산
-    const style = window.getComputedStyle(node);
-    const limitWidth = Math.max(
-      ELEMENT_MIN_SIZE,
-      parseFloat(style.paddingLeft) +
-        parseFloat(style.paddingRight) +
-        parseFloat(style.borderLeftWidth) +
-        parseFloat(style.borderRightWidth)
-    );
-    const limitHeight = Math.max(
-      ELEMENT_MIN_SIZE,
-      parseFloat(style.paddingTop) +
-        parseFloat(style.paddingBottom) +
-        parseFloat(style.borderTopWidth) +
-        parseFloat(style.borderBottomWidth)
-    );
+    // 1. Bounds (단일 선택 보정)
+    let groupRect = selectionBounds || { x: 0, y: 0, w: 0, h: 0 };
+    if (selectedIds.length === 1 && !selectionBounds) {
+      const node = document.querySelector(`[data-id="${selectedIds[0]}"]`);
+      if (node) {
+        const r = node.getBoundingClientRect();
+        groupRect = {
+          x: (r.left - paperRect.left) / zoom,
+          y: (r.top - paperRect.top) / zoom,
+          w: r.width / zoom,
+          h: r.height / zoom,
+        };
+      }
+    }
 
-    const el = elements.find((item) => item.elementId === id);
-    const anchorX = el?.props.anchorX ?? 0.5;
-    const anchorY = el?.props.anchorY ?? 0.5;
+    // 2. Anchor & Limit
+    const anchorX = currentAnchor.x;
+    const anchorY = currentAnchor.y;
+    let limitWidth = ELEMENT_MIN_SIZE,
+      limitHeight = ELEMENT_MIN_SIZE;
+
+    if (selectedIds.length === 1) {
+      const node = document.querySelector(`[data-id="${selectedIds[0]}"]`);
+      if (node) {
+        const style = window.getComputedStyle(node);
+        limitWidth = Math.max(
+          ELEMENT_MIN_SIZE,
+          parseFloat(style.paddingLeft) +
+            parseFloat(style.paddingRight) +
+            parseFloat(style.borderLeftWidth) +
+            parseFloat(style.borderRightWidth)
+        );
+        limitHeight = Math.max(
+          ELEMENT_MIN_SIZE,
+          parseFloat(style.paddingTop) +
+            parseFloat(style.paddingBottom) +
+            parseFloat(style.borderTopWidth) +
+            parseFloat(style.borderBottomWidth)
+        );
+      }
+    }
+
+    const groupScreenX = paperRect.left + groupRect.x * zoom;
+    const groupScreenY = paperRect.top + groupRect.y * zoom;
+    const anchorScreenX = groupScreenX + groupRect.w * zoom * anchorX;
+    const anchorScreenY = groupScreenY + groupRect.h * zoom * anchorY;
+    const localAnchorX = groupRect.x + groupRect.w * anchorX;
+    const localAnchorY = groupRect.y + groupRect.h * anchorY;
+
+    const snapshot: any[] = [];
+    selectedIds.forEach((id) => {
+      const el = elements.find((item) => item.elementId === id);
+      const node = document.querySelector(`[data-id="${id}"]`);
+      if (el && node) {
+        const r = node.getBoundingClientRect();
+        const lx = (r.left - paperRect.left) / zoom;
+        const ly = (r.top - paperRect.top) / zoom;
+        const lw = r.width / zoom;
+        const lh = r.height / zoom;
+        snapshot.push({
+          id,
+          x: lx,
+          y: ly,
+          w: lw,
+          h: lh,
+          fontSize: parseFloat(el.props.fontSize) || 16,
+          distX: lx - localAnchorX,
+          distY: ly - localAnchorY,
+        });
+      }
+    });
 
     isResizingRef.current = true;
     resizeStartDataRef.current = {
       startX: e.clientX,
       startY: e.clientY,
-      startLeft: (rect.left - paperRect.left) / zoom,
-      startTop: (rect.top - paperRect.top) / zoom,
-      startWidth: rect.width / zoom,
-      startHeight: rect.height / zoom,
+      groupStartLeft: groupRect.x,
+      groupStartTop: groupRect.y,
+      groupStartWidth: groupRect.w,
+      groupStartHeight: groupRect.h,
       anchorX,
       anchorY,
+      anchorScreenX,
+      anchorScreenY,
       limitWidth,
       limitHeight,
       direction,
+      snapshot,
     };
   };
   const handleAnchorStart = (e: React.MouseEvent) => {
@@ -383,9 +496,7 @@ export default function Canvas() {
     isMovingAnchorRef.current = true;
   };
 
-  // ----------------------------------------------------------------
-  // 🖱️ Global Mouse Handlers
-  // ----------------------------------------------------------------
+  // Mouse Down
   const handleMouseDown = (e: React.MouseEvent) => {
     if (
       e.button === 1 ||
@@ -407,7 +518,6 @@ export default function Canvas() {
       isCloningRef.current = false;
       clonedIdsRef.current = [];
       activeMovingIdsRef.current = [];
-
       const targetEl = (e.target as HTMLElement).closest("[data-id]");
       if (targetEl) {
         const id = targetEl.getAttribute("data-id");
@@ -425,7 +535,9 @@ export default function Canvas() {
             activeMovingIdsRef.current = [...selectedIds];
           }
           const positions: any = {};
-          const targetIds = !selectedIds.includes(id) ? [id] : selectedIds;
+          const targetIds = !selectedIds.includes(id)
+            ? [...selectedIds, id]
+            : selectedIds;
           targetIds.forEach((sid) => {
             const el = elements.find((item) => item.elementId === sid);
             if (el)
@@ -465,106 +577,73 @@ export default function Canvas() {
         return;
       }
 
-      // ⭐ 2. Resize (Anchor Based & Anti-Drift Logic)
+      // Resize
       if (
         isResizingRef.current &&
         resizeStartDataRef.current &&
-        selectedIds.length === 1
+        resizeStartDataRef.current.snapshot
       ) {
         const {
           startX,
           startY,
-          startLeft,
-          startTop,
-          startWidth,
-          startHeight,
-          direction,
+          groupStartWidth,
+          groupStartHeight,
+          groupStartLeft,
+          groupStartTop,
           anchorX,
           anchorY,
+          anchorScreenX,
+          anchorScreenY,
           limitWidth,
           limitHeight,
+          snapshot,
+          direction,
         } = resizeStartDataRef.current;
-
-        // 이동 거리
-        const dx = (e.clientX - startX) / zoom;
-        const dy = (e.clientY - startY) / zoom;
-
-        // 1. 현재 핸들 위치를 기준으로 스케일 팩터 계산
-        // 공식: (초기거리 + 이동량) / 초기거리 = 배율(Scale)
-        // 거리 = 핸들위치 - 앵커위치
-
-        const wAnchorOffset = startWidth * anchorX; // 앵커의 X 상대 위치 (0~Width)
-        const hAnchorOffset = startHeight * anchorY; // 앵커의 Y 상대 위치 (0~Height)
-
-        let sX = 1;
-        let sY = 1;
-
-        // X축 스케일
-        if (direction.includes("e")) {
-          const initialDist = startWidth - wAnchorOffset; // 앵커 ~ 우측 핸들 거리
-          // 앵커가 우측 끝에 있으면(initialDist ≈ 0) 우측으로 크기 조절 불가 (Scale undefined)
-          // 여기선 0.1 이상일 때만 계산
-          if (Math.abs(initialDist) > 0.1)
-            sX = (initialDist + dx) / initialDist;
-        } else if (direction.includes("w")) {
-          const initialDist = -wAnchorOffset; // 앵커 ~ 좌측 핸들 거리 (음수)
-          if (Math.abs(initialDist) > 0.1)
-            sX = (initialDist + dx) / initialDist; // dx는 왼쪽이동 시 음수 -> 거리 증가
+        let scaleX = 1;
+        let scaleY = 1;
+        if (direction.includes("e") || direction.includes("w")) {
+          const startDistX = startX - anchorScreenX;
+          const curDistX = e.clientX - anchorScreenX;
+          if (Math.abs(startDistX) > 1) scaleX = curDistX / startDistX;
         }
-
-        // Y축 스케일
-        if (direction.includes("s")) {
-          const initialDist = startHeight - hAnchorOffset;
-          if (Math.abs(initialDist) > 0.1)
-            sY = (initialDist + dy) / initialDist;
-        } else if (direction.includes("n")) {
-          const initialDist = -hAnchorOffset;
-          if (Math.abs(initialDist) > 0.1)
-            sY = (initialDist + dy) / initialDist;
+        if (direction.includes("n") || direction.includes("s")) {
+          const startDistY = startY - anchorScreenY;
+          const curDistY = e.clientY - anchorScreenY;
+          if (Math.abs(startDistY) > 1) scaleY = curDistY / startDistY;
         }
-
-        // 2. Shift (정비율)
         if (e.shiftKey) {
-          // 변형량이 큰 쪽을 따라감
-          if (Math.abs(sX - 1) > Math.abs(sY - 1)) sY = sX;
-          else sX = sY;
+          if (Math.abs(scaleX - 1) > Math.abs(scaleY - 1)) scaleY = scaleX;
+          else scaleX = scaleY;
         }
+        if (groupStartWidth * scaleX < limitWidth)
+          scaleX = (limitWidth / groupStartWidth) * Math.sign(scaleX);
+        if (groupStartHeight * scaleY < limitHeight)
+          scaleY = (limitHeight / groupStartHeight) * Math.sign(scaleY);
 
-        // 3. 새 크기 계산
-        let newW = startWidth * sX;
-        let newH = startHeight * sY;
-
-        // 4. 최소 크기 제한 (Anti-Drift 핵심: 제한된 크기로 Scale 재계산)
-        if (newW < limitWidth) {
-          newW = limitWidth;
-          // 앵커 기준이므로 크기가 제한되면 스케일도 제한됨 -> 위치도 제한됨
-        }
-        if (newH < limitHeight) {
-          newH = limitHeight;
-        }
-
-        // 5. 위치 역산 (Anchor Fixed)
-        // NewPos = AnchorWorldPos - (NewSize * AnchorRatio)
-        // AnchorWorldPos = StartPos + (StartSize * AnchorRatio)
-        const anchorWorldX = startLeft + wAnchorOffset;
-        const anchorWorldY = startTop + hAnchorOffset;
-
-        const newX = anchorWorldX - newW * anchorX;
-        const newY = anchorWorldY - newH * anchorY;
-
-        dispatch(
-          resizeElement({
-            id: selectedIds[0],
+        const anchorLocalX = groupStartLeft + groupStartWidth * anchorX;
+        const anchorLocalY = groupStartTop + groupStartHeight * anchorY;
+        const updates = snapshot.map((item) => {
+          const newW = item.w * scaleX;
+          const newH = item.h * scaleY;
+          const newFontSize = item.fontSize
+            ? item.fontSize * scaleY
+            : undefined;
+          const newX = anchorLocalX + item.distX * scaleX;
+          const newY = anchorLocalY + item.distY * scaleY;
+          return {
+            id: item.id,
             left: newX,
             top: newY,
             width: newW,
             height: newH,
-          })
-        );
+            fontSize: newFontSize,
+          };
+        });
+        dispatch(resizeElements(updates));
         return;
       }
 
-      // 3. Anchor Move
+      // Anchor Move
       if (isMovingAnchorRef.current && selectedIds.length === 1) {
         const id = selectedIds[0];
         const node = document.querySelector(`[data-id="${id}"]`);
@@ -583,7 +662,7 @@ export default function Canvas() {
         return;
       }
 
-      // 4. Move & Clone
+      // Move
       if (isDraggingElement.current) {
         const dist = Math.sqrt(
           Math.pow(e.clientX - dragStartRef.current.x, 2) +
@@ -657,22 +736,24 @@ export default function Canvas() {
         }
         return;
       }
-
-      // 5. Drag Select
       if (isSelecting && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const cx = e.clientX - rect.left;
         const cy = e.clientY - rect.top;
         const sx = dragStartRef.current.x - rect.left;
         const sy = dragStartRef.current.y - rect.top;
-        const box = {
+        setSelectionBox({
+          x: Math.min(sx, cx),
+          y: Math.min(sy, cy),
+          w: Math.abs(cx - sx),
+          h: Math.abs(cy - sy),
+        });
+        selectionBoxRef.current = {
           x: Math.min(sx, cx),
           y: Math.min(sy, cy),
           w: Math.abs(cx - sx),
           h: Math.abs(cy - sy),
         };
-        setSelectionBox(box);
-        selectionBoxRef.current = box;
       }
     };
 
@@ -732,7 +813,6 @@ export default function Canvas() {
             );
           };
           activeContainer?.children.forEach((childId) => {
-            // ⭐ HTMLElement 캐스팅
             const rootNode = document.querySelector(
               `[data-id="${childId}"]`
             ) as HTMLElement;
@@ -740,10 +820,10 @@ export default function Canvas() {
               let isHit = checkIntersection(rootNode.getBoundingClientRect());
               if (!isHit) {
                 const descendants = rootNode.querySelectorAll("[data-id]");
-                descendants.forEach((node) => {
+                descendants.forEach((d) => {
                   if (
                     checkIntersection(
-                      (node as HTMLElement).getBoundingClientRect()
+                      (d as HTMLElement).getBoundingClientRect()
                     )
                   )
                     isHit = true;
@@ -873,15 +953,17 @@ export default function Canvas() {
             zoom={canvasSettings.zoom}
           />
         )}
-        {currentTool === "scale" && selectedIds.length === 1 && (
-          <TransformLayer
-            targetId={selectedIds[0]}
-            paperRef={paperRef}
-            zoom={canvasSettings.zoom}
-            onResizeStart={handleResizeStart}
-            onAnchorStart={handleAnchorStart}
-          />
-        )}
+        {/* ⭐ TransformLayer (단일/다중 모두 표시, anchor 전달) */}
+        {currentTool === "scale" &&
+          selectedIds.length > 0 &&
+          selectionBounds && (
+            <TransformLayer
+              selectedBox={selectionBounds}
+              anchor={currentAnchor}
+              onResizeStart={handleResizeStart}
+              onAnchorStart={handleAnchorStart}
+            />
+          )}
       </CanvasControls>
       {isSelecting && selectionBox && containerRef.current && (
         <div

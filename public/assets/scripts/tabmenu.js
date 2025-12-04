@@ -1,7 +1,7 @@
 export default class Tabmenu {
   // 에디터 노출 변수
   static fields = {
-    menus: {
+    menuIds: {
       type: 'array',
       label: '탭메뉴 ID',
       default: []

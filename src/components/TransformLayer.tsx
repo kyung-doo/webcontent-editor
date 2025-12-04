@@ -1,70 +1,23 @@
-import React, { useState, useLayoutEffect } from "react";
-import { useSelector } from "react-redux";
-import { RootState } from "../store/store";
+import React from "react";
 
 interface TransformLayerProps {
-  targetId: string;
-  paperRef: React.RefObject<HTMLDivElement>; // ⭐ containerRef -> paperRef 변경
-  zoom: number;
+  // Canvas에서 이미 줌과 좌표 보정이 끝난 박스 정보를 받음
+  selectedBox: { x: number; y: number; w: number; h: number } | null;
+  anchor: { x: number; y: number };
   onResizeStart: (e: React.MouseEvent, direction: string) => void;
   onAnchorStart: (e: React.MouseEvent) => void;
 }
 
 export default function TransformLayer({
-  targetId,
-  paperRef,
-  zoom,
+  selectedBox,
+  anchor,
   onResizeStart,
   onAnchorStart,
 }: TransformLayerProps) {
-  // Redux에서 요소 정보 구독 (위치 변경 감지)
-  const element = useSelector((state: RootState) =>
-    state.elements.elements.find((el) => el.elementId === targetId)
-  );
+  if (!selectedBox) return null;
 
-  const [rect, setRect] = useState<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
-
-  // 화면 렌더링 직후 좌표 다시 계산 (깜빡임 방지 위해 useLayoutEffect)
-  useLayoutEffect(() => {
-    if (!element || !paperRef.current) {
-      setRect(null);
-      return;
-    }
-
-    const updateRect = () => {
-      const node = document.querySelector(`[data-id="${targetId}"]`);
-      if (!node || !paperRef.current) return;
-
-      const elRect = node.getBoundingClientRect();
-      const paperRect = paperRef.current.getBoundingClientRect();
-
-      // ⭐ [핵심] 종이 기준 상대 좌표로 변환 (Zoom 역보정)
-      const x = (elRect.left - paperRect.left) / zoom;
-      const y = (elRect.top - paperRect.top) / zoom;
-      const w = elRect.width / zoom;
-      const h = elRect.height / zoom;
-
-      setRect({ x, y, w, h });
-    };
-
-    updateRect();
-
-    // 리사이즈 등으로 인한 변경 감지를 위해 짧은 지연 후 한 번 더 체크 (선택사항)
-    const timer = setTimeout(updateRect, 0);
-    return () => clearTimeout(timer);
-  }, [element, paperRef, zoom, targetId]);
-
-  if (!rect || !element) return null;
-
-  const { x, y, w, h } = rect;
-  // 앵커 포인트 (기본값 중앙)
-  const anchorX = element.props.anchorX ?? 0.5;
-  const anchorY = element.props.anchorY ?? 0.5;
+  const { x, y, w, h } = selectedBox;
+  const { x: anchorX, y: anchorY } = anchor;
 
   // 핸들 스타일
   const handleStyle =
@@ -78,7 +31,7 @@ export default function TransformLayer({
       {/* 파란 테두리 */}
       <div className="absolute inset-0 border border-blue-500 pointer-events-none"></div>
 
-      {/* 8방향 리사이즈 핸들 (위치 미세 조정: 중앙 정렬을 위해 transform 사용) */}
+      {/* 8방향 리사이즈 핸들 */}
       <div
         className={`${handleStyle} cursor-nw-resize`}
         style={{ top: 0, left: 0, transform: "translate(-50%, -50%)" }}
@@ -126,7 +79,7 @@ export default function TransformLayer({
         onMouseDown={(e) => onResizeStart(e, "se")}
       />
 
-      {/* 앵커 포인트 (십자선 원형) */}
+      {/* 앵커 포인트 (항상 표시) */}
       <div
         className="absolute w-4 h-4 cursor-crosshair pointer-events-auto flex items-center justify-center z-[1002]"
         style={{
