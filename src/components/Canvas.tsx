@@ -37,7 +37,12 @@ export default function Canvas() {
   } = useCanvasState();
 
   // 2. 선택 영역(Bounding Box) 계산
-  const selectionBounds = useSelectionBounds(selectedIds, elements, canvasSettings.zoom, paperRef);
+  const selectionBounds = useSelectionBounds(
+    selectedIds,
+    elements,
+    canvasSettings.zoom,
+    paperRef
+  );
 
   // 3. 마우스 인터랙션 (이동, 리사이즈, 드래그 선택)
   const {
@@ -61,8 +66,6 @@ export default function Canvas() {
   useCanvasShortcuts(stateRef, dragRef);
 
   // 5. 기타 UI 핸들러 (클릭, 더블클릭, 드롭)
-  // (로직이 단순하여 컴포넌트 내부에 유지)
-
   const handleCanvasClick = (e: React.MouseEvent) => {
     // 드래그가 아닌 단순 클릭일 때만 선택 해제
     const dist = Math.sqrt(
@@ -162,22 +165,22 @@ export default function Canvas() {
         onDoubleClick={handleBackgroundDoubleClick}
         onDragOver={(e) => e.preventDefault()}
       >
-        {/* 요소 렌더링 */}
+        {/* 요소 렌더링 - 항상 Edit 모드 */}
         {rootElement.children.map((childId: string) => (
           <RuntimeElement
             key={childId}
             elementId={childId}
-            mode="edit"
+            mode="edit" // ⭐ 하드코딩 복구
             isInsideActive={activeContainerId === "root"}
           />
         ))}
 
-        {/* 선택 영역 테두리 (파란 점선) - 하나라도 선택되면 표시 */}
+        {/* 선택 영역 테두리 (파란 점선) */}
         {selectedIds.length > 0 && (
           <SelectionGroupBorder bounds={selectionBounds} />
         )}
 
-        {/* 변형 핸들 (리사이즈 & 앵커) - Scale 툴일 때만 표시 */}
+        {/* 변형 핸들 (리사이즈 & 앵커) */}
         {currentTool === "scale" &&
           selectedIds.length > 0 &&
           selectionBounds && (

@@ -9,6 +9,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../store/store";
 import { enterContainer } from "../store/canvasSlice";
 import { ELEMENT_MIN_SIZE } from "../constants";
+import { loadScript } from "../utils/scriptManager";
 
 interface RuntimeElementProps {
   elementId: string;
@@ -116,11 +117,14 @@ export default function RuntimeElement({
     return () => clearTimeout(timer);
   }, [element, allElements, isPreview, activeContainerId, canvasSettings.zoom]);
 
-  // Script Engine (생략 - 기존 코드 유지)
+  // --------------------------------------------------------------------------
+  // 🟢 스크립트 엔진
+  // --------------------------------------------------------------------------
   const latestDataRef = useRef({
     props: element?.props,
     scriptValues: element?.scriptValues,
   });
+
   useEffect(() => {
     if (element)
       latestDataRef.current = {
@@ -128,7 +132,97 @@ export default function RuntimeElement({
         scriptValues: element.scriptValues,
       };
   }, [element?.props, element?.scriptValues]);
-  // ... (Script loading & execution logic same as before) ...
+  
+  const requestRef = useRef<number>();
+  const modulesRef = useRef<any[]>([]);
+
+  useEffect(() => {
+    if (!element || !isPreview || !element.scripts || !domRef.current) return;
+    let isCleanedUp = false;
+    const runScripts = async () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      modulesRef.current = [];
+      const loadedList: any[] = [];
+      const processed = new Set<string>();
+      for (const scriptPath of element.scripts!) {
+        if (isCleanedUp) return;
+        if (processed.has(scriptPath)) continue;
+        processed.add(scriptPath);
+        try {
+          const module = await loadScript(scriptPath, true);
+          if (module) {
+            const ScriptClass = module.default;
+            const instance =
+              typeof ScriptClass === "function"
+                ? new ScriptClass()
+                : ScriptClass;
+            const defaultFields =
+              ScriptClass.fields || ScriptClass.default?.fields || {};
+            loadedList.push({ path: scriptPath, instance, defaultFields });
+          }
+        } catch (e) {}
+      }
+      if (isCleanedUp) return;
+      modulesRef.current = loadedList;
+      modulesRef.current.forEach(({ instance, defaultFields, path }) => {
+        if (instance.onStart) {
+          const currentVals = latestDataRef.current.scriptValues?.[path] || {};
+          const finalFields = { ...{}, ...defaultFields };
+          const simplifiedDefaults: any = {};
+          Object.keys(defaultFields).forEach(
+            (k) => (simplifiedDefaults[k] = defaultFields[k].default)
+          );
+          Object.assign(simplifiedDefaults, currentVals);
+          try {
+            instance.onStart(
+              domRef.current,
+              latestDataRef.current.props,
+              simplifiedDefaults
+            );
+          } catch (e) {}
+        }
+      });
+      let lastTime = performance.now();
+      const loop = (time: number) => {
+        if (isCleanedUp) return;
+        const deltaTime = (time - lastTime) / 1000;
+        lastTime = time;
+        modulesRef.current.forEach(({ instance, defaultFields, path }) => {
+          if (instance.onUpdate && domRef.current) {
+            const currentVals =
+              latestDataRef.current.scriptValues?.[path] || {};
+            const simplifiedDefaults: any = {};
+            Object.keys(defaultFields).forEach(
+              (k) => (simplifiedDefaults[k] = defaultFields[k].default)
+            );
+            Object.assign(simplifiedDefaults, currentVals);
+            try {
+              instance.onUpdate(
+                domRef.current,
+                latestDataRef.current.props,
+                simplifiedDefaults,
+                deltaTime
+              );
+            } catch (e) {}
+          }
+        });
+        requestRef.current = requestAnimationFrame(loop);
+      };
+      requestRef.current = requestAnimationFrame(loop);
+    };
+    runScripts();
+    return () => {
+      isCleanedUp = true;
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      modulesRef.current.forEach(({ instance }) => {
+        if (instance.onDestroy)
+          try {
+            instance.onDestroy(domRef.current, latestDataRef.current.props, {});
+          } catch (e) {}
+      });
+      modulesRef.current = [];
+    };
+  }, [JSON.stringify(element?.scripts), isPreview]);
 
   // Event Handlers
   const handleClick = (e: React.MouseEvent) => {

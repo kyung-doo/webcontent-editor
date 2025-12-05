@@ -4,7 +4,6 @@ import ReactDOM from 'react-dom/client'
 import { Provider, useDispatch } from 'react-redux'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { store } from './store/store'
-// 👇 변경된 액션들 import
 import { setElements } from './store/elementSlice'
 import { setCanvasState } from './store/canvasSlice'
 import { ModalProvider } from './context/ModalContext.tsx'
@@ -30,9 +29,12 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
           // Canvas 데이터 복구
           if (wholeState.canvas) {
             dispatch(setCanvasState({
-                canvasSettings: wholeState.canvas.canvasSettings,
-                activeContainerId: wholeState.canvas.activeContainerId,
-                selectedElementId: null // 선택 상태는 초기화
+              canvasSettings: wholeState.canvas.canvasSettings,
+              selectedIds: [],
+              selectedElementId: null,
+              activeContainerId: '',
+              currentTool: 'select',
+              clipboard: []
             }));
           }
         }
