@@ -32,7 +32,7 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
               canvasSettings: wholeState.canvas.canvasSettings,
               selectedIds: [],
               selectedElementId: null,
-              activeContainerId: '',
+              activeContainerId: wholeState.canvas.activeContainerId || 'root',
               currentTool: 'select',
               clipboard: []
             }));
