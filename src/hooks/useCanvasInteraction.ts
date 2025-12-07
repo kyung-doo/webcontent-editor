@@ -362,8 +362,6 @@ export default function useCanvasInteraction(
             if (Math.abs(dx) > Math.abs(dy)) dy = 0;
             else dx = 0;
           }
-          const moveX = dx - drag.currentDelta.dx;
-          const moveY = dy - drag.currentDelta.dy;
 
           if (e.altKey && !drag.isCloning) {
             drag.isCloning = true;
@@ -382,11 +380,12 @@ export default function useCanvasInteraction(
               drag.originalIds.includes(el.elementId)
             );
             const { newElements, idMap } = cloneElementsHierarchy(
-              targets,
+              elements,
               drag.originalIds,
               activeContainerId,
               { x: 0, y: 0 }
             );
+            
             dispatch(addElements(newElements));
 
             const newIds = drag.originalIds.map((oid) => idMap[oid]);

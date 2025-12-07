@@ -10,7 +10,7 @@ import { RULER_THICKNESS, DRAG_THRESHOLD } from "../constants";
 // Components
 import RuntimeElement from "./RuntimeElement";
 import EditorBreadcrumb from "./EditorBreadcrumb";
-import SelectionGroupBorder from "./SelectionGroupBorder";
+import SelectionBorder from "./SelectionBorder";
 import CanvasControls from "./CanvasControls";
 import TransformLayer from "./TransformLayer";
 
@@ -64,6 +64,13 @@ export default function Canvas() {
 
   // 4. 키보드 단축키 연결 (dragRef를 공유하여 스페이스바 패닝 등 처리)
   useCanvasShortcuts(stateRef, dragRef);
+
+  const selectedCount = selectedIds.length;
+  const selectedElement = selectedCount === 1 
+      ? elements.find(el => el.elementId === selectedIds[0]) 
+      : null;
+  const selectedType = selectedElement ? selectedElement.type : undefined;
+  const idToDisplay = selectedElement?.id || undefined;
 
   // 5. 기타 UI 핸들러 (클릭, 더블클릭, 드롭)
   const handleCanvasClick = (e: React.MouseEvent) => {
@@ -170,14 +177,19 @@ export default function Canvas() {
           <RuntimeElement
             key={childId}
             elementId={childId}
-            mode="edit" // ⭐ 하드코딩 복구
+            mode="edit"
             isInsideActive={activeContainerId === "root"}
           />
         ))}
 
         {/* 선택 영역 테두리 (파란 점선) */}
         {selectedIds.length > 0 && (
-          <SelectionGroupBorder bounds={selectionBounds} />
+          <SelectionBorder 
+            bounds={selectionBounds} 
+            selectedCount={selectedCount}
+            selectedType={selectedType}
+            elementIdToDisplay={idToDisplay}
+          />
         )}
 
         {/* 변형 핸들 (리사이즈 & 앵커) */}

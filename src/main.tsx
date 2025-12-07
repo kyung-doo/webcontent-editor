@@ -34,7 +34,8 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
               selectedElementId: null,
               activeContainerId: wholeState.canvas.activeContainerId || 'root',
               currentTool: 'select',
-              clipboard: []
+              clipboard: [],
+              mode: window.location.hash.includes('preview') ? 'preview' : 'edit'
             }));
           }
         }

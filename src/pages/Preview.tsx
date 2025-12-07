@@ -3,6 +3,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import RuntimeElement from '../components/RuntimeElement';
 import { clearScriptCache } from '../utils/scriptManager';
+import CanvasGlobalStyle from '../components/CanvasGlobalStyle';
 
 export default function Preview() {
   // 분리된 Store 사용 (state.elements)
@@ -19,16 +20,19 @@ export default function Preview() {
   if (!rootElement) return <div className="w-screen h-screen flex items-center justify-center">Loading...</div>;
 
   return (
-    <div className="w-screen h-screen bg-white overflow-hidden relative">
-      <div className="w-full h-full relative">
-         {rootElement.children.map((childId: string) => (
-            <RuntimeElement 
-              key={childId} 
-              elementId={childId} 
-              mode="preview" 
-            />
-         ))}
+    <>
+      <CanvasGlobalStyle />
+      <div className="w-screen h-screen bg-white overflow-hidden relative">
+        <div className="w-full h-full relative">
+          {rootElement.children.map((childId: string) => (
+              <RuntimeElement 
+                key={childId} 
+                elementId={childId} 
+                mode="preview" 
+              />
+          ))}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -292,6 +292,7 @@ export default function CanvasControls({
           onDragOver={onDragOver}
           onDrop={onDrop}
           onClick={onClick}
+          onDoubleClick={onDoubleClick}
         >
           {/* Actual Canvas Paper */}
           <div
@@ -303,7 +304,6 @@ export default function CanvasControls({
               backgroundColor: canvasSettings.backgroundColor,
               transform: `translate(${canvasSettings.scrollX}px, ${canvasSettings.scrollY}px) scale(${canvasSettings.zoom})`,
             }}
-            onDoubleClick={onDoubleClick}
           >
             {children}
           </div>
