@@ -3,7 +3,7 @@ import React, {
   useRef,
   useState,
   useLayoutEffect,
-  useMemo
+  useMemo,
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../store/store";
@@ -22,7 +22,7 @@ export default function RuntimeElement({
   elementId,
   mode,
   isInsideActive = false,
-  noOpacity = false
+  noOpacity = false,
 }: RuntimeElementProps) {
   const dispatch = useDispatch();
   const domRef = useRef<HTMLDivElement>(null);
@@ -34,9 +34,17 @@ export default function RuntimeElement({
   const allElements = useSelector(
     (state: RootState) => state.elements.elements
   );
-  const { activeContainerId, canvasSettings, selectedIds, currentTool } = useSelector(
-    (state: RootState) => state.canvas
-  );
+  const { activeContainerId, canvasSettings, selectedIds, currentTool } =
+    useSelector((state: RootState) => state.canvas);
+
+  // 페이지 정보 가져오기
+  const { pages, activePageId } = useSelector((state: any) => state.page);
+
+  // 현재 페이지의 루트 ID 계산
+  const activePage = pages
+    ? pages.find((p: any) => p.pageId === activePageId)
+    : null;
+  const currentRootId = activePage?.rootElementId || "root";
 
   // 상태 파생 변수
   const isPreview = mode === "preview";
@@ -45,24 +53,31 @@ export default function RuntimeElement({
 
   // 조상/부모 체크 (HitArea 및 이벤트 제어용)
   const isAncestor = useMemo(() => {
-    if (activeContainerId === "root") return false;
+    if (activeContainerId === currentRootId) return false;
     let current = allElements.find((el) => el.elementId === activeContainerId);
     while (current && current.parentId) {
       if (current.parentId === elementId) return true;
       current = allElements.find((el) => el.elementId === current?.parentId);
     }
     return false;
-  }, [elementId, activeContainerId, allElements]);
+  }, [elementId, activeContainerId, allElements, currentRootId]);
 
   const isFocused = isActiveContainer || isInsideActive;
-  const isRootMode = activeContainerId === "root";
+  const isRootMode = activeContainerId === currentRootId;
   const isDimmed = !isPreview && !isRootMode && !isFocused && !isAncestor;
-  
+
   // 편집 모드에서의 인터랙션 가능 여부
-  const canInteract = !isPreview && isDirectChild && !isActiveContainer && !isDimmed;
-  
-  // 자식 컨테이너의 포인터 이벤트 제어 (스타일은 CSS로 가지만, 구조적 제어는 필요)
-  const childrenPointerEvents = isPreview ? "auto" : isActiveContainer ? "auto" : "none";
+  const canInteract =
+    !isPreview && isDirectChild && !isActiveContainer && !isDimmed;
+
+  // 자식 컨테이너의 포인터 이벤트 제어
+  const childrenPointerEvents = isPreview
+    ? "auto"
+    : isActiveContainer
+    ? "auto"
+    : "none";
+
+  // 시각적 요소 숨김 처리 (이미지/텍스트 내용물)
   const shouldHideVisuals = !isPreview && (isActiveContainer || isAncestor);
 
   // --------------------------------------------------------------------------
@@ -87,7 +102,6 @@ export default function RuntimeElement({
       return;
     }
     const measureGroup = () => {
-      // 글로벌 스타일이 적용된 후 측정되므로 DOM Rect가 정확함
       const parentRect = domRef.current!.getBoundingClientRect();
       const zoom = canvasSettings.zoom || 1;
       let minX = 0;
@@ -108,7 +122,7 @@ export default function RuntimeElement({
         maxX = Math.max(maxX, relRight);
         maxY = Math.max(maxY, relBottom);
       });
-      
+
       const P = 0; // Padding
       setHitAreaRect({
         left: minX - P,
@@ -117,9 +131,8 @@ export default function RuntimeElement({
         height: maxY - minY + P * 2,
       });
     };
-    
+
     measureGroup();
-    // 스타일 변경/리플로우 후 재계산을 위한 타이머
     const timer = setTimeout(measureGroup, 100);
     return () => clearTimeout(timer);
   }, [element, allElements, isPreview, activeContainerId, canvasSettings.zoom]);
@@ -145,9 +158,8 @@ export default function RuntimeElement({
   const modulesRef = useRef<any[]>([]);
 
   useEffect(() => {
-    // 프리뷰 모드이면서 스크립트가 있을 때만 실행
     if (!element || !isPreview || !element.scripts || !domRef.current) return;
-    
+
     let isCleanedUp = false;
 
     const runScripts = async () => {
@@ -156,12 +168,11 @@ export default function RuntimeElement({
       const loadedList: any[] = [];
       const processed = new Set<string>();
 
-      // (A) 스크립트 로드
       for (const scriptPath of element.scripts!) {
         if (isCleanedUp) return;
         if (processed.has(scriptPath)) continue;
         processed.add(scriptPath);
-        
+
         try {
           const module = await loadScript(scriptPath, true);
           if (module) {
@@ -182,7 +193,6 @@ export default function RuntimeElement({
       if (isCleanedUp) return;
       modulesRef.current = loadedList;
 
-      // (B) onStart 실행
       modulesRef.current.forEach(({ instance, defaultFields, path }) => {
         if (instance.onStart) {
           const currentVals = latestDataRef.current.scriptValues?.[path] || {};
@@ -191,7 +201,7 @@ export default function RuntimeElement({
             (k) => (simplifiedDefaults[k] = defaultFields[k].default)
           );
           Object.assign(simplifiedDefaults, currentVals);
-          
+
           try {
             instance.onStart(
               domRef.current,
@@ -204,7 +214,6 @@ export default function RuntimeElement({
         }
       });
 
-      // (C) onUpdate 루프 실행
       let lastTime = performance.now();
       const loop = (time: number) => {
         if (isCleanedUp) return;
@@ -213,7 +222,8 @@ export default function RuntimeElement({
 
         modulesRef.current.forEach(({ instance, defaultFields, path }) => {
           if (instance.onUpdate && domRef.current) {
-            const currentVals = latestDataRef.current.scriptValues?.[path] || {};
+            const currentVals =
+              latestDataRef.current.scriptValues?.[path] || {};
             const simplifiedDefaults: any = {};
             Object.keys(defaultFields).forEach(
               (k) => (simplifiedDefaults[k] = defaultFields[k].default)
@@ -239,7 +249,6 @@ export default function RuntimeElement({
 
     runScripts();
 
-    // (D) Cleanup (onDestroy)
     return () => {
       isCleanedUp = true;
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
@@ -260,12 +269,10 @@ export default function RuntimeElement({
   // 3. Event Handlers
   // --------------------------------------------------------------------------
   const handleClick = (e: React.MouseEvent) => {
-    // 편집 모드일 때의 클릭 처리는 Canvas 레벨에서 중앙 관리하므로 여기선 생략
-    // 필요 시 e.stopPropagation() 등을 사용
+    // Canvas 레벨에서 처리
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
-    // 박스 더블 클릭 시 컨테이너 진입
     if (!isPreview && element?.type === "Box" && canInteract) {
       e.stopPropagation();
       dispatch(enterContainer(element.elementId));
@@ -287,7 +294,20 @@ export default function RuntimeElement({
       className={`absolute ${
         !isPreview && canInteract && !isDimmed ? "cursor-pointer" : ""
       } ${element.className || ""}`}
-      style={{opacity: isDimmed ? noOpacity ? 1 : 0.3 : 1}}
+      style={{
+        opacity: isDimmed ? (noOpacity ? 1 : 0.3) : 1,
+        // [수정] Active Container(편집 중)일 때 자기 자신(배경/테두리)을 투명하게 처리
+        // 스타일 우선순위를 높여 CSS 클래스나 GlobalStyle을 덮어씁니다.
+        ...(isActiveContainer && !isPreview
+          ? {
+              backgroundColor: "transparent",
+              backgroundImage: "none",
+              border: "none",
+              boxShadow: "none",
+              outline: "none",
+            }
+          : {}),
+      }}
     >
       {/* 내용물 렌더링 (Image, Text 등) */}
       {!shouldHideVisuals && (
@@ -304,7 +324,6 @@ export default function RuntimeElement({
               style={{
                 fontSize: element.props.fontSize,
                 color: element.props.color,
-                // 필요한 경우 여기에 추가 스타일 적용 (단, 기본은 부모 상속)
               }}
             >
               {element.props.text}
@@ -318,7 +337,7 @@ export default function RuntimeElement({
         <>
           <div
             style={{
-              display: "contents", // 레이아웃 흐름을 위해 유지
+              display: "contents",
               pointerEvents: childrenPointerEvents as any,
             }}
           >
@@ -333,12 +352,12 @@ export default function RuntimeElement({
             ))}
           </div>
 
-          {/* Hit Area (투명 클릭 영역) */}
+          {/* Hit Area */}
           {!isPreview && !isActiveContainer && canInteract && hitAreaRect && (
             <div
               className="absolute group-hit-area pointer-events-auto"
               style={{
-                zIndex: -1, // 자식 뒤로
+                zIndex: -1,
                 left: hitAreaRect.left,
                 top: hitAreaRect.top,
                 width: hitAreaRect.width,
@@ -347,7 +366,7 @@ export default function RuntimeElement({
             />
           )}
 
-          {/* 컨테이너 활성화 시 가이드라인 (선택적) */}
+          {/* 가이드라인 (Active 상태일 때만) */}
           {!isPreview && isActiveContainer && (
             <div className="absolute left-0 top-0 w-full h-full pointer-events-none overflow-visible z-50">
               <div
@@ -363,8 +382,6 @@ export default function RuntimeElement({
           )}
         </>
       )}
-
-      {/* 테두리(Hover Border)는 CanvasSelectionBorder에서 처리하므로 제거됨 */}
     </div>
   );
 }

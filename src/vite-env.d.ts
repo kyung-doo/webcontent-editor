@@ -25,7 +25,7 @@ interface Window {
     // --- [창 관리 (프리뷰)] ---
 
     // 프리뷰 창 열기
-    openPreview: (width: number, height: number) => void;
+    openPreview: (width: number, height: number, pageId: string) => void;
 
 
     // --- [Redux 상태 동기화 (Renderer <-> Main)] ---

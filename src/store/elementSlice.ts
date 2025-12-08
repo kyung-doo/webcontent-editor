@@ -10,15 +10,16 @@ export interface EditorElement {
   className?: string;
   children: string[];
   parentId: string | null;
+  originalId?: string; // 복제 시 원본 ID 추적용
 }
 
 interface ElementState {
   elements: EditorElement[];
 }
 
+// 초기 앱 실행 시 기본으로 존재하는 Root 요소
 const rootElement: EditorElement = {
   elementId: "root",
-  id: "root",
   type: "Box",
   props: {
     width: "100%",
@@ -73,20 +74,29 @@ export const elementSlice = createSlice({
   initialState,
   reducers: {
     addElement: (state, action: PayloadAction<EditorElement>) => {
-      let parentId = action.payload.parentId;
-      let parent = state.elements.find((el) => el.elementId === parentId);
-      if (!parent) {
-        parentId = "root";
-        parent = state.elements.find((el) => el.elementId === "root");
-      }
+      const parentId = action.payload.parentId;
+
+      // 1. 부모 요소 찾기
+      const parent = state.elements.find((el) => el.elementId === parentId);
+
+      // 💥 [수정] 부모가 없으면 'root'로 보내는 대신, 추가하지 않음 (멀티 페이지 안전성 강화)
       if (parent) {
         const newElement = { ...action.payload, parentId };
-        // 중복 방지
+
+        // 중복 ID 방지
         if (!state.elements.find((e) => e.elementId === newElement.elementId)) {
           state.elements.push(newElement);
-          if (!parent.children.includes(newElement.elementId))
+          if (!parent.children.includes(newElement.elementId)) {
             parent.children.push(newElement.elementId);
+          }
         }
+      } else if (parentId === null) {
+        // 💥 부모가 null인 경우 (예: 새 페이지의 Root 추가) 허용
+        state.elements.push(action.payload);
+      } else {
+        console.warn(
+          `[ElementSlice] Parent not found: ${parentId}. Element skipped.`
+        );
       }
     },
 
@@ -105,7 +115,6 @@ export const elementSlice = createSlice({
       });
     },
 
-    // ⭐ [수정] 요소 삭제 (연결 고리 끊기)
     deleteElements: (state, action: PayloadAction<string[]>) => {
       const idsToDelete = action.payload;
       if (idsToDelete.length === 0) return;
@@ -125,17 +134,15 @@ export const elementSlice = createSlice({
       );
     },
 
-    // ⭐ [수정] 그룹화 (중복 키 방지 로직 강화)
     groupElements: (
       state,
       action: PayloadAction<{ newGroup: EditorElement; memberIds: string[] }>
     ) => {
       const { newGroup, memberIds } = action.payload;
-      // ID 중복 제거
       const uniqueMemberIds = [...new Set(memberIds)];
       if (uniqueMemberIds.length === 0) return;
 
-      // 1. [Detach] 기존의 모든 부모에서 멤버 ID 제거 (고아 상태)
+      // 1. [Detach] 기존의 모든 부모에서 멤버 ID 제거
       state.elements.forEach((el) => {
         if (el.children && el.children.length > 0) {
           el.children = el.children.filter(
@@ -171,11 +178,10 @@ export const elementSlice = createSlice({
           const el = state.elements.find((e) => e.elementId === memberId);
           if (el) {
             el.parentId = newGroup.elementId;
-            // 중복 체크 후 추가
             if (!addedGroup.children.includes(memberId)) {
               addedGroup.children.push(memberId);
             }
-            // 좌표 보정
+            // 좌표 보정 (그룹 내부 상대 좌표로 변환)
             const oldLeft = parseFloat(el.props.left || 0);
             const oldTop = parseFloat(el.props.top || 0);
             el.props.left = `${oldLeft - groupLeft}px`;
@@ -218,6 +224,7 @@ export const elementSlice = createSlice({
       );
     },
 
+    // 복수 요소 추가 (페이지 추가 시 주로 사용됨)
     addElements: (state, action: PayloadAction<EditorElement[]>) => {
       const newElements = action.payload;
       newElements.forEach((el) => {
@@ -232,7 +239,6 @@ export const elementSlice = createSlice({
       });
     },
 
-    // ⭐ 리사이즈 (다중 - 배치)
     resizeElements: (
       state,
       action: PayloadAction<
@@ -244,7 +250,7 @@ export const elementSlice = createSlice({
           height: number;
           fontSize?: number;
           initialWidth?: number;
-          initialHeight?: number; // 👈 Canvas에서 넘겨준 실제 픽셀값
+          initialHeight?: number;
         }[]
       >
     ) => {
@@ -267,19 +273,16 @@ export const elementSlice = createSlice({
             const wStr = String(el.props.width);
             const hStr = String(el.props.height);
 
-            // %나 auto일 경우, 실제 픽셀값(initialWidth)을 기준점으로 삼음
             if (wStr.includes("%") || wStr === "auto") {
-              oldW = initialWidth || width; // initialWidth가 없으면 현재 바뀐 width라도 씀
+              oldW = initialWidth || width;
             }
             if (hStr.includes("%") || hStr === "auto") {
               oldH = initialHeight || height;
             }
 
-            // 2. 스케일 계산 (0 나누기 방지)
             const scaleX = oldW !== 0 ? width / oldW : 1;
             const scaleY = oldH !== 0 ? height / oldH : 1;
 
-            // 3. 부모 속성 업데이트
             el.props.left = `${left}px`;
             el.props.top = `${top}px`;
             el.props.width = `${width}px`;

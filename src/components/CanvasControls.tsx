@@ -41,6 +41,8 @@ export default function CanvasControls({
   const [startScroll, setStartScroll] = useState({ x: 0, y: 0 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
+  const { activePageId } = useSelector((state: any) => state.page);
+
   // --- Resize Observer ---
   useEffect(() => {
     const handleResize = () => {
@@ -298,6 +300,7 @@ export default function CanvasControls({
           <div
             ref={paperRef}
             className="absolute origin-top-left bg-white shadow-2xl transition-colors duration-300"
+            id={activePageId}
             style={{
               width: `${canvasSettings.width}px`,
               height: `${canvasSettings.height}px`,

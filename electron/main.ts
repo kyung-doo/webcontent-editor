@@ -66,10 +66,18 @@ async function createMainWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-// 프리뷰(플레이 모드) 창 생성
-function createPreviewWindow(width: number, height: number) {
+// [수정] 프리뷰(플레이 모드) 창 생성 - pageId 인자 추가
+function createPreviewWindow(width: number, height: number, pageId?: string) {
   if (previewWindow) {
     previewWindow.focus(); // 이미 있으면 포커스만
+    
+    // [옵션] 이미 열려있는 창이라도 페이지 이동을 원한다면 URL을 다시 로드할 수 있습니다.
+    // const hash = pageId ? `#/preview?pageId=${pageId}` : `#/preview`;
+    // const newUrl = isDev 
+    //   ? `${process.env.VITE_DEV_SERVER_URL}${hash}`
+    //   : `file://${path.join(__dirname, '../dist/index.html')}${hash}`;
+    // previewWindow.loadURL(newUrl);
+
     return;
   }
 
@@ -85,10 +93,15 @@ function createPreviewWindow(width: number, height: number) {
     },
   });
 
-  // HashRouter를 쓰므로 URL 뒤에 #/preview 붙임
+  // [수정] URL 뒤에 쿼리 파라미터(?pageId=...) 추가 로직
+  // HashRouter를 사용하므로 #/preview 뒤에 쿼리가 붙어야 함 -> #/preview?pageId=page-1
+  const hashPath = pageId ? `#/preview?pageId=${pageId}` : `#/preview`;
+
   const previewURL = isDev
-    ? `${process.env.VITE_DEV_SERVER_URL}#/preview`
-    : `file://${path.join(__dirname, '../dist/index.html')}#/preview`;
+    ? `${process.env.VITE_DEV_SERVER_URL}${hashPath}`
+    : `file://${path.join(__dirname, '../dist/index.html')}${hashPath}`;
+
+  console.log('Opening Preview URL:', previewURL); // 디버깅용 로그
 
   previewWindow.loadURL(previewURL);
 
@@ -147,9 +160,10 @@ function registerIpcHandlers() {
     }
   });
 
-  // 프리뷰 창 열기 요청 처리
-  ipcMain.on('open-preview', (event, width: number, height: number) => {
-    createPreviewWindow(width, height);
+  // [수정] 프리뷰 창 열기 요청 처리 - pageId 인자 수신 및 전달
+  ipcMain.on('open-preview', (event, width: number, height: number, pageId: string) => {
+    console.log('Preview request received:', { width, height, pageId });
+    createPreviewWindow(width, height, pageId);
   });
 
   // 프로젝트 저장 (예시)

@@ -19,6 +19,7 @@ import useCanvasState from "../hooks/useCanvasState";
 import useSelectionBounds from "../hooks/useSelectionBounds";
 import useCanvasInteraction from "../hooks/useCanvasInteraction";
 import useCanvasShortcuts from "../hooks/useCanvasShortcuts";
+import { useSelector } from "react-redux";
 
 export default function Canvas() {
   // 1. Canvas 기본 상태 및 Refs 가져오기
@@ -34,7 +35,13 @@ export default function Canvas() {
     containerRef, // DOM Ref
     paperRef, // DOM Ref
     dispatch,
+    currentRootId, // 💥 [추가] useCanvasState에서 계산된 현재 페이지의 Root ID
   } = useCanvasState();
+
+  const { pages, activePageId } = useSelector((state: any) => state.page);
+  const activePageName = pages
+    ? pages.find((p: any) => p.pageId === activePageId)?.name
+    : "Page";
 
   // 2. 선택 영역(Bounding Box) 계산
   const selectionBounds = useSelectionBounds(
@@ -66,8 +73,9 @@ export default function Canvas() {
   useCanvasShortcuts(stateRef, dragRef);
 
   const selectedCount = selectedIds.length;
-  const selectedElement = selectedCount === 1 
-      ? elements.find(el => el.elementId === selectedIds[0]) 
+  const selectedElement =
+    selectedCount === 1
+      ? elements.find((el) => el.elementId === selectedIds[0])
       : null;
   const selectedType = selectedElement ? selectedElement.type : undefined;
   const idToDisplay = selectedElement?.id || undefined;
@@ -90,13 +98,14 @@ export default function Canvas() {
   };
 
   const handleBackgroundDoubleClick = (e: React.MouseEvent) => {
-    // 현재 루트가 아니라면 상위 컨테이너로 이동
-    if (activeContainerId !== "root") {
+    // 💥 [수정] 현재 페이지의 Root가 아니라면 상위 컨테이너로 이동
+    if (activeContainerId !== currentRootId) {
       const currentActive = elements.find(
         (el) => el.elementId === activeContainerId
       );
       if (currentActive) {
-        const parentId = currentActive.parentId || "root";
+        // 💥 [수정] 부모가 없거나 Root에 도달하면 currentRootId로 설정
+        const parentId = currentActive.parentId || currentRootId;
         dispatch(setActiveContainer(parentId));
       }
     }
@@ -160,6 +169,8 @@ export default function Canvas() {
         activeId={activeContainerId}
         elements={elements}
         onNavigate={(id) => dispatch(setActiveContainer(id))}
+        rootId={currentRootId}
+        rootName={activePageName}
       />
 
       {/* 캔버스 컨트롤 영역 (줌, 패닝, 마우스 이벤트) */}
@@ -178,14 +189,15 @@ export default function Canvas() {
             key={childId}
             elementId={childId}
             mode="edit"
-            isInsideActive={activeContainerId === "root"}
+            // 💥 [수정] 현재 활성 컨테이너가 페이지 Root인지 확인
+            isInsideActive={activeContainerId === currentRootId}
           />
         ))}
 
         {/* 선택 영역 테두리 (파란 점선) */}
         {selectedIds.length > 0 && (
-          <SelectionBorder 
-            bounds={selectionBounds} 
+          <SelectionBorder
+            bounds={selectionBounds}
             selectedCount={selectedCount}
             selectedType={selectedType}
             elementIdToDisplay={idToDisplay}

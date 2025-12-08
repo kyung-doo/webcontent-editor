@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProject: (data: any) => ipcRenderer.send('save-project', data),
   getAssets: (subPath?: string) => ipcRenderer.invoke('get-assets', subPath),
   getScripts: () => ipcRenderer.invoke('get-scripts'),
-  openPreview: (width: number, height: number) => ipcRenderer.send('open-preview', width, height),
+  openPreview: (width: number, height: number, pageId: string) => ipcRenderer.send('open-preview', width, height, pageId),
 
   // 1. [Renderer -> Main] 액션 보내기
   dispatch: (action: any) => ipcRenderer.send('dispatch-main', action),
