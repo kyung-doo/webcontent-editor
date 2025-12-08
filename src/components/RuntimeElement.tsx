@@ -27,13 +27,17 @@ export default function RuntimeElement({
   const dispatch = useDispatch();
   const domRef = useRef<HTMLDivElement>(null);
 
-  // Redux 상태 구독
-  const element = useSelector((state: RootState) =>
-    state.elements.elements.find((el) => el.elementId === elementId)
+  // [수정] Redux 상태 구독 (객체 구조에 맞게 최적화)
+  // 1. 특정 요소 조회: .find() 대신 ID로 직접 접근 (O(1))
+  const element = useSelector(
+    (state: RootState) => state.elements.elements[elementId]
   );
-  const allElements = useSelector(
+
+  // 2. 전체 요소 맵: 조상 찾기 등을 위해 가져옴 (Record<string, EditorElement>)
+  const elementsMap = useSelector(
     (state: RootState) => state.elements.elements
   );
+
   const { activeContainerId, canvasSettings, selectedIds, currentTool } =
     useSelector((state: RootState) => state.canvas);
 
@@ -51,16 +55,20 @@ export default function RuntimeElement({
   const isActiveContainer = elementId === activeContainerId;
   const isDirectChild = element?.parentId === activeContainerId;
 
-  // 조상/부모 체크 (HitArea 및 이벤트 제어용)
+  // [수정] 조상/부모 체크 (HitArea 및 이벤트 제어용) - Map 조회로 최적화
   const isAncestor = useMemo(() => {
     if (activeContainerId === currentRootId) return false;
-    let current = allElements.find((el) => el.elementId === activeContainerId);
+
+    // 활성 컨테이너부터 시작해서 부모를 타고 올라감
+    let current = elementsMap[activeContainerId];
+
     while (current && current.parentId) {
       if (current.parentId === elementId) return true;
-      current = allElements.find((el) => el.elementId === current?.parentId);
+      // 부모 ID로 바로 조회
+      current = elementsMap[current.parentId];
     }
     return false;
-  }, [elementId, activeContainerId, allElements, currentRootId]);
+  }, [elementId, activeContainerId, elementsMap, currentRootId]);
 
   const isFocused = isActiveContainer || isInsideActive;
   const isRootMode = activeContainerId === currentRootId;
@@ -135,7 +143,7 @@ export default function RuntimeElement({
     measureGroup();
     const timer = setTimeout(measureGroup, 100);
     return () => clearTimeout(timer);
-  }, [element, allElements, isPreview, activeContainerId, canvasSettings.zoom]);
+  }, [element, elementsMap, isPreview, activeContainerId, canvasSettings.zoom]);
 
   // --------------------------------------------------------------------------
   // 2. Script Engine (스크립트 실행기)

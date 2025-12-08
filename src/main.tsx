@@ -15,15 +15,27 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    if (window.electronAPI) {
+    // window.electronAPI 타입 단언 (TypeScript 에러 방지용)
+    const electronAPI = (window as any).electronAPI;
+
+    if (electronAPI) {
       // 1. 초기 상태 로드
-      window.electronAPI.getInitialState().then((wholeState: any) => {
-        console.log("초기 상태 수신:", wholeState);
+      electronAPI.getInitialState().then((wholeState: any) => {
+        console.log("🔄 초기 상태 수신:", wholeState);
 
         if (wholeState) {
           // Element 데이터 복구
           if (wholeState.elements?.elements) {
-            dispatch(setElements(wholeState.elements.elements));
+            // [수정] Main Process의 State가 객체(Map) 형태일 수 있으므로
+            // 배열로 변환하여 setElements에 전달해야 합니다.
+            const rawElements = wholeState.elements.elements;
+
+            // 배열이면 그대로, 객체면 values만 추출하여 배열로 변환
+            const elementsArray = Array.isArray(rawElements)
+              ? rawElements
+              : Object.values(rawElements);
+
+            dispatch(setElements(elementsArray));
           }
 
           // Canvas 데이터 복구
@@ -43,9 +55,9 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
               })
             );
           }
-          
+
+          // Page 데이터 복구
           if (wholeState.page) {
-            
             if (wholeState.page.pages) {
               dispatch(setPages(wholeState.page.pages));
             }
@@ -57,8 +69,13 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
       });
 
       // 2. 실시간 동기화
-      const cleanup = window.electronAPI.onDispatch((action: any) => {
-        dispatch(action);
+      const cleanup = electronAPI.onDispatch((action: any) => {
+        // [중요] Electron에서 온 액션임을 표시하여 무한 루프 방지
+        // store.ts의 미들웨어가 이 플래그를 보고 재전송을 막습니다.
+        dispatch({
+          ...action,
+          meta: { ...action.meta, fromElectron: true },
+        });
       });
       return () => cleanup();
     }

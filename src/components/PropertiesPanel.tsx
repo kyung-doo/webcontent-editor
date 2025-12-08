@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../store/store";
 import { updateCanvasSettings } from "../store/canvasSlice";
@@ -106,7 +106,10 @@ function StyleRow({
 
 // --- Main Panel ---
 export default function PropertiesPanel() {
-  const { elements } = useSelector((state: RootState) => state.elements);
+
+  const elementsMap = useSelector((state: RootState) => state.elements.elements);
+  const elements = useMemo(() => elementsMap ? Object.values(elementsMap) : [], [elementsMap]);
+
   const { selectedElementId, canvasSettings } = useSelector(
     (state: RootState) => state.canvas
   );

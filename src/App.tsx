@@ -1,4 +1,5 @@
-import { useDispatch, useSelector } from "react-redux";
+import { useMemo } from "react";
+import { useSelector } from "react-redux";
 import { RootState } from "./store/store";
 import LeftSidebar from "./components/LeftSidebar";
 import Canvas from "./components/Canvas";
@@ -6,10 +7,12 @@ import RightSidebar from "./components/RightSidebar";
 import BottomPanel from "./components/BottomPanel";
 import CanvasGlobalStyle from "./components/CanvasGlobalStyle";
 
+
 function App() {
-  const { elements } = useSelector((state: RootState) => state.elements);
+  const elementsMap = useSelector((state: RootState) => state.elements.elements);
+  const elements = useMemo(() => elementsMap ? Object.values(elementsMap) : [], [elementsMap]);
+
   const { canvasSettings } = useSelector((state: RootState) => state.canvas);
-  // [추가] 현재 활성 페이지 ID를 가져옵니다.
   const { activePageId } = useSelector((state: RootState) => state.page);
 
   const handleSave = () => {
@@ -86,3 +89,4 @@ function App() {
 }
 
 export default App;
+

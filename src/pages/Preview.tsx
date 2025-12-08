@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { useLocation } from 'react-router-dom';
 import { RootState } from '../store/store';
@@ -7,9 +7,9 @@ import { clearScriptCache } from '../utils/scriptManager';
 import CanvasGlobalStyle from '../components/CanvasGlobalStyle';
 
 export default function Preview() {
-  // [안전성 수정] elements나 page 상태가 undefined일 경우를 대비해 기본값([]) 처리
-  const elementsState = useSelector((state: RootState) => state.elements);
-  const elements = elementsState?.elements || [];
+  
+  const elementsMap = useSelector((state: RootState) => state.elements.elements);
+  const elements = useMemo(() => elementsMap ? Object.values(elementsMap) : [], [elementsMap]);
   
   const pageState = useSelector((state: RootState) => state.page);
   const pages = pageState?.pages || [];

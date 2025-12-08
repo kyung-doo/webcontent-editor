@@ -7,8 +7,9 @@ import { RULER_THICKNESS } from "../constants";
 export default function useCanvasState() {
   const dispatch = useDispatch();
 
-  // 1. Redux State
-  const { elements } = useSelector((state: RootState) => state.elements);
+  const elementsMap = useSelector((state: RootState) => state.elements.elements);
+  const elements = useMemo(() => elementsMap ? Object.values(elementsMap) : [], [elementsMap]);
+
   const {
     selectedIds,
     canvasSettings,
