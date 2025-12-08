@@ -61,7 +61,7 @@ export default function CanvasGlobalStyle() {
 
       // 1. 현재 페이지 Root의 직계 자식인 경우 -> 유효함 (Base Case)
       if (element.parentId === currentRootId) {
-        return `#${activePageId} > ${info.finalSelector}`;
+        return `#${activePageId} ${info.finalSelector}`;
       }
 
       // 2. 부모가 있는 경우 -> 재귀적으로 부모가 현재 Root에 연결되어 있는지 확인
@@ -74,7 +74,7 @@ export default function CanvasGlobalStyle() {
 
           // 부모가 유효한 경로를 가지고 있다면 결합
           if (parentSelector) {
-            return `${parentSelector} > ${info.finalSelector}`;
+            return `${parentSelector} ${info.finalSelector}`;
           }
         }
       }
