@@ -40,7 +40,7 @@ function App() {
 
   return (
     <>
-      <CanvasGlobalStyle />
+      <CanvasGlobalStyle mode="edit" />
 
       <div className="flex h-screen flex-col bg-gray-50 text-gray-800 font-sans overflow-hidden">
         {/* 상단 헤더 */}

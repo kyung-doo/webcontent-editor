@@ -49,9 +49,6 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
                   wholeState.canvas.activeContainerId || "root",
                 currentTool: "select",
                 clipboard: [],
-                mode: window.location.hash.includes("preview")
-                  ? "preview"
-                  : "edit",
               })
             );
           }

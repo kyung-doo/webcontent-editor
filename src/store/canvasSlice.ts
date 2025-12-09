@@ -9,7 +9,6 @@ interface CanvasState {
   activeContainerId: string;
   currentTool: "select" | "scale" | "hand";
   clipboard: EditorElement[];
-  mode: "edit" | "preview";
 }
 
 const initialState: CanvasState = {
@@ -32,7 +31,6 @@ const initialState: CanvasState = {
   activeContainerId: "root",
   currentTool: "select",
   clipboard: [],
-  mode: "edit",
 };
 
 export const canvasSlice = createSlice({
@@ -111,13 +109,6 @@ export const canvasSlice = createSlice({
     copyToClipboard: (state, action: PayloadAction<EditorElement[]>) => {
       state.clipboard = action.payload;
     },
-    setMode: (state, action: PayloadAction<"edit" | "preview">) => {
-      state.mode = action.payload;
-      // 프리뷰로 갈 때 선택 해제 등의 정리 작업
-      if (action.payload === "preview") {
-        state.selectedIds = [];
-      }
-    },
   },
 });
 
@@ -130,7 +121,6 @@ export const {
   setTool,
   setCanvasState,
   copyToClipboard,
-  setMode,
 } = canvasSlice.actions;
 
 export default canvasSlice.reducer;

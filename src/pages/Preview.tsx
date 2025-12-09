@@ -48,7 +48,7 @@ export default function Preview() {
 
   return (
     <>
-      <CanvasGlobalStyle />
+      <CanvasGlobalStyle mode="preview" />
       <div className="w-screen h-screen bg-white overflow-hidden relative">
         <div 
           id={targetPageId} 

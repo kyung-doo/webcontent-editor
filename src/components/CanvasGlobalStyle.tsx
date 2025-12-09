@@ -5,7 +5,6 @@ import { ELEMENT_MIN_SIZE } from "../constants";
 import { objectToCssString } from "../utils/styleUtils";
 import { RootState } from "../store/store";
 
-
 const getSelectorInfo = (element: any) => {
   const internalId = element.elementId;
   if (!internalId) return null;
@@ -23,12 +22,35 @@ const getSelectorInfo = (element: any) => {
   return { internalId, finalSelector };
 };
 
-export default function CanvasGlobalStyle() {
+// [Helper] 스타일 객체를 단순 속성(cssProps)과 중첩 객체(nestedObj)로 분리
+const splitStyleProps = (styleObj: any) => {
+  const cssProps: any = {};
+  const nestedObj: any = {};
+
+  if (!styleObj || typeof styleObj !== "object") {
+    return { cssProps, nestedObj };
+  }
+
+  Object.entries(styleObj).forEach(([k, v]) => {
+    if (typeof v === "object" && v !== null) {
+      nestedObj[k] = v;
+    } else {
+      cssProps[k] = v;
+    }
+  });
+
+  return { cssProps, nestedObj };
+};
+
+interface CanvasGlobalStyleProps {
+  mode: "edit" | "preview";
+}
+
+export default function CanvasGlobalStyle({ mode }: CanvasGlobalStyleProps) {
   const elementsMap = useSelector(
     (state: RootState) => state.elements.elements
   );
-  // [수정] 캔버스 설정을 가져와서 현재 너비를 확인합니다.
-  const { activeContainerId, mode, canvasSettings } = useSelector(
+  const { activeContainerId, canvasSettings } = useSelector(
     (state: RootState) => state.canvas
   );
   const { pages, activePageId } = useSelector((state: any) => state.page);
@@ -39,6 +61,7 @@ export default function CanvasGlobalStyle() {
   const currentRootId = activePage?.rootElementId || "root";
 
   const isPreview = mode === "preview";
+
   const isRootMode = activeContainerId === currentRootId;
 
   // 현재 캔버스 너비 (에디터 상의 가상 뷰포트 너비)
@@ -51,7 +74,10 @@ export default function CanvasGlobalStyle() {
   const elementsCss = useMemo(() => {
     if (!elementsList || elementsList.length === 0) return "";
 
-    const getFullSelector = (element: any, depth: number = 0): string | null => {
+    const getFullSelector = (
+      element: any,
+      depth: number = 0
+    ): string | null => {
       if (depth > 20) return null;
 
       const info = getSelectorInfo(element);
@@ -124,10 +150,8 @@ export default function CanvasGlobalStyle() {
           backgroundColor:
             baseProps.backgroundColor ?? element.backgroundColor ?? "",
 
-          minWidth:
-            element.type === "Image" ? "" : `${ELEMENT_MIN_SIZE}px`,
-          minHeight:
-            element.type === "Image" ? "" : `${ELEMENT_MIN_SIZE}px`,
+          minWidth: element.type === "Image" ? "" : `${ELEMENT_MIN_SIZE}px`,
+          minHeight: element.type === "Image" ? "" : `${ELEMENT_MIN_SIZE}px`,
 
           ...baseProps,
 
@@ -135,32 +159,72 @@ export default function CanvasGlobalStyle() {
           zIndex: isActiveContainer ? 100 : baseProps.zIndex || "",
         };
 
-        let cssOutput = `${finalSelector} { ${objectToCssString(baseStyle)} }\n`;
+        let cssOutput = `${finalSelector} { ${objectToCssString(
+          baseStyle
+        )} }\n`;
 
-        // 2. 변형 스타일 생성 (Media Query 에뮬레이션 포함)
+        // 2. 변형 스타일 생성 (Media Query 및 Selector 처리)
         variantStyles.forEach(({ key, style }) => {
-          const variantCssBody = objectToCssString(style);
+          // 스타일 객체를 '단순 속성'과 '중첩 객체(:hover 등)'로 분리
+          const { cssProps, nestedObj } = splitStyleProps(style);
+          const cssPropsString = objectToCssString(cssProps);
+
+          // 중첩된 Selector들에 대한 CSS 문자열 생성 함수
+          const generateNestedCss = (parentSelector: string) => {
+            let nestedOutput = "";
+            Object.entries(nestedObj).forEach(([subKey, subValue]) => {
+              // subKey: :hover, .active 등
+              const subCssProps = objectToCssString(subValue as any);
+              if (!subCssProps) return;
+
+              let fullSubSelector = "";
+              if (subKey.includes("&")) {
+                fullSubSelector = subKey.replace(/&/g, parentSelector);
+              } else {
+                fullSubSelector = `${parentSelector}${subKey}`;
+              }
+              nestedOutput += `${fullSubSelector} { ${subCssProps} }\n`;
+            });
+            return nestedOutput;
+          };
 
           if (key.startsWith("@media")) {
-            // [핵심 로직 수정]
-            // 에디터 환경에서는 실제 브라우저 너비가 아니라 CanvasSettings의 너비를 기준으로
-            // 미디어 쿼리를 '시뮬레이션' 해야 합니다.
-            
-            // 예: "@media (max-width: 768px)" -> 768 추출
-            const match = key.match(/max-width:\s*(\d+)px/);
-            if (match) {
-              const maxWidth = parseInt(match[1], 10);
-              
-              // 현재 캔버스 너비가 미디어 쿼리 조건보다 작거나 같으면 스타일 적용
-              if (currentCanvasWidth <= maxWidth) {
-                 cssOutput += `${finalSelector} { ${variantCssBody} }\n`;
+            // [Preview Mode] 실제 CSS Media Query 출력
+            if (isPreview) {
+              let innerCss = "";
+
+              // 1) 미디어 쿼리 내의 기본 속성
+              if (cssPropsString) {
+                innerCss += `${finalSelector} { ${cssPropsString} }\n`;
+              }
+              // 2) 미디어 쿼리 내의 중첩 Selector (:hover 등)
+              innerCss += generateNestedCss(finalSelector);
+
+              if (innerCss.trim()) {
+                cssOutput += `${key} { \n${innerCss} }\n`;
               }
             } else {
-              // 복잡한 쿼리는 그대로 출력
-              cssOutput += `${key} { ${finalSelector} { ${variantCssBody} } }\n`;
+              // [Editor Mode] CanvasSettings 기반 시뮬레이션 (Flattening)
+              const match = key.match(/max-width:\s*(\d+)px/);
+              let shouldRender = true;
+
+              if (match) {
+                const maxWidth = parseInt(match[1], 10);
+                if (currentCanvasWidth > maxWidth) {
+                  shouldRender = false;
+                }
+              }
+
+              if (shouldRender) {
+                // 조건을 만족하면 미디어 쿼리 껍데기를 벗기고 내부 스타일만 바로 적용
+                if (cssPropsString) {
+                  cssOutput += `${finalSelector} { ${cssPropsString} }\n`;
+                }
+                cssOutput += generateNestedCss(finalSelector);
+              }
             }
           } else {
-            
+            // 일반 Selector (예: :hover, .active) - Root Level
             let fullSelector = "";
             if (key.includes("&")) {
               fullSelector = key.replace(/&/g, finalSelector);
@@ -168,7 +232,12 @@ export default function CanvasGlobalStyle() {
               fullSelector = `${finalSelector}${key}`;
             }
 
-            cssOutput += `${fullSelector} { ${variantCssBody} }\n`;
+            // 1) Selector 자체의 속성
+            if (cssPropsString) {
+              cssOutput += `${fullSelector} { ${cssPropsString} }\n`;
+            }
+            // 2) Selector 내부의 중첩 (잘 없지만 지원)
+            cssOutput += generateNestedCss(fullSelector);
           }
         });
 
@@ -184,7 +253,7 @@ export default function CanvasGlobalStyle() {
     isRootMode,
     currentRootId,
     activePageId,
-    currentCanvasWidth, // [중요] 캔버스 너비가 바뀌면 스타일을 다시 계산
+    currentCanvasWidth,
   ]);
 
   const resetCss = `
