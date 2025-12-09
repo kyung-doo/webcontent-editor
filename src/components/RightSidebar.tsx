@@ -62,7 +62,7 @@ export default function RightSidebar() {
       className={`
         relative border-l border-gray-300 bg-white shadow-sm z-50 
         flex transition-all duration-300 ease-in-out
-        ${isOpen ? 'w-80' : 'w-12'} 
+        ${isOpen ? 'w-[350px]' : 'w-12'} 
       `}
     >
       {/* 1. 토글 버튼 (왼쪽 가장자리) */}

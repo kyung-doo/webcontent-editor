@@ -5,12 +5,12 @@ import { ELEMENT_MIN_SIZE } from "../constants";
 import { objectToCssString } from "../utils/styleUtils";
 import { RootState } from "../store/store";
 
+
 const getSelectorInfo = (element: any) => {
   const internalId = element.elementId;
   if (!internalId) return null;
   let customId = element.props?.id;
 
-  // props.id가 없지만 root 레벨에 id가 있고, 내부 식별자와 다르면 사용자 ID로 간주
   if (!customId && element.id && element.id !== internalId) {
     customId = element.id;
   }
@@ -24,11 +24,13 @@ const getSelectorInfo = (element: any) => {
 };
 
 export default function CanvasGlobalStyle() {
-  // [수정] elements 구조 변경(객체)에 따른 Selector 수정
-  // elementsMap: { "root": {...}, "box1": {...} } 형태의 객체
-  const elementsMap = useSelector((state: RootState) => state.elements.elements);
-
-  const { activeContainerId, mode } = useSelector((state: any) => state.canvas);
+  const elementsMap = useSelector(
+    (state: RootState) => state.elements.elements
+  );
+  // [수정] 캔버스 설정을 가져와서 현재 너비를 확인합니다.
+  const { activeContainerId, mode, canvasSettings } = useSelector(
+    (state: RootState) => state.canvas
+  );
   const { pages, activePageId } = useSelector((state: any) => state.page);
 
   const activePage = pages
@@ -39,7 +41,9 @@ export default function CanvasGlobalStyle() {
   const isPreview = mode === "preview";
   const isRootMode = activeContainerId === currentRootId;
 
-  // [수정] 객체(Map)를 순회 가능한 배열로 변환 (Memoization)
+  // 현재 캔버스 너비 (에디터 상의 가상 뷰포트 너비)
+  const currentCanvasWidth = canvasSettings?.width || 1920;
+
   const elementsList = useMemo(() => {
     return elementsMap ? Object.values(elementsMap) : [];
   }, [elementsMap]);
@@ -47,39 +51,26 @@ export default function CanvasGlobalStyle() {
   const elementsCss = useMemo(() => {
     if (!elementsList || elementsList.length === 0) return "";
 
-    // [수정] 부모 경로 추적
-    // elementsMap이 이미 객체이므로 .get() 대신 대괄호 접근 [] 사용 (O(1))
-    const getFullSelector = (
-      element: any,
-      depth: number = 0
-    ): string | null => {
-      // 무한 루프 방지
+    const getFullSelector = (element: any, depth: number = 0): string | null => {
       if (depth > 20) return null;
 
       const info = getSelectorInfo(element);
       if (!info) return null;
 
-      // 1. 현재 페이지 Root의 직계 자식인 경우 -> 유효함 (Base Case)
       if (element.parentId === currentRootId) {
         return `#${activePageId} ${info.finalSelector}`;
       }
 
-      // 2. 부모가 있는 경우 -> 재귀적으로 부모가 현재 Root에 연결되어 있는지 확인
       if (element.parentId) {
-        // [수정] Map 객체 직접 접근으로 변경
         const parent = elementsMap[element.parentId];
-
         if (parent) {
           const parentSelector = getFullSelector(parent, depth + 1);
-
-          // 부모가 유효한 경로를 가지고 있다면 결합
           if (parentSelector) {
             return `${parentSelector} ${info.finalSelector}`;
           }
         }
       }
 
-      // 3. 연결되지 않은 요소 (다른 페이지 등) -> null 반환
       return null;
     };
 
@@ -92,19 +83,14 @@ export default function CanvasGlobalStyle() {
         const { internalId } = getSelectorInfo(element) || {};
         if (!internalId) return "";
 
-        // 전체 계층 경로 생성
         const finalSelector = getFullSelector(element);
-
-        // 선택자가 null이면(다른 페이지 요소이면) CSS 생성 생략
         if (!finalSelector) return "";
 
-        // --- 상호작용 및 스타일 로직 ---
+        // --- 상호작용 로직 ---
         const isActiveContainer = internalId === activeContainerId;
         const isDirectChild = element.parentId === activeContainerId;
 
-        // Pointer Events (클릭 제어)
         let pointerEvents = "none";
-
         if (isPreview) {
           pointerEvents = "auto";
         } else if (isRootMode) {
@@ -114,30 +100,81 @@ export default function CanvasGlobalStyle() {
           if (isActiveContainer) pointerEvents = "none";
         }
 
-        const style: React.CSSProperties = {
-          position: "absolute",
-          left: element.props?.left ?? element.x,
-          top: element.props?.top ?? element.y,
-          width: element.props?.width ?? element.width ?? "auto",
-          height: element.props?.height ?? element.height ?? "auto",
+        // --- Props 분리 ---
+        const baseProps: any = {};
+        const variantStyles: { key: string; style: any }[] = [];
+
+        if (element.props) {
+          Object.entries(element.props).forEach(([key, value]) => {
+            if (typeof value === "object" && value !== null) {
+              variantStyles.push({ key, style: value });
+            } else {
+              baseProps[key] = value;
+            }
+          });
+        }
+
+        // 1. 기본 스타일 생성
+        const baseStyle: React.CSSProperties = {
+          position: "",
+          left: baseProps.left ?? element.x,
+          top: baseProps.top ?? element.y,
+          width: baseProps.width ?? element.width ?? "",
+          height: baseProps.height ?? element.height ?? "",
           backgroundColor:
-            element.props?.backgroundColor ?? element.backgroundColor ?? "",
+            baseProps.backgroundColor ?? element.backgroundColor ?? "",
 
-          minWidth: element.type === "Image" ? "auto" : `${ELEMENT_MIN_SIZE}px`,
+          minWidth:
+            element.type === "Image" ? "" : `${ELEMENT_MIN_SIZE}px`,
           minHeight:
-            element.type === "Image" ? "auto" : `${ELEMENT_MIN_SIZE}px`,
+            element.type === "Image" ? "" : `${ELEMENT_MIN_SIZE}px`,
 
-          ...element.props,
+          ...baseProps,
 
           pointerEvents: pointerEvents as any,
-          zIndex: isActiveContainer ? 100 : element.props?.zIndex || "auto",
+          zIndex: isActiveContainer ? 100 : baseProps.zIndex || "",
         };
 
-        const cssBody = objectToCssString(style);
+        let cssOutput = `${finalSelector} { ${objectToCssString(baseStyle)} }\n`;
 
-        return `${finalSelector} { ${cssBody} }`;
+        // 2. 변형 스타일 생성 (Media Query 에뮬레이션 포함)
+        variantStyles.forEach(({ key, style }) => {
+          const variantCssBody = objectToCssString(style);
+
+          if (key.startsWith("@media")) {
+            // [핵심 로직 수정]
+            // 에디터 환경에서는 실제 브라우저 너비가 아니라 CanvasSettings의 너비를 기준으로
+            // 미디어 쿼리를 '시뮬레이션' 해야 합니다.
+            
+            // 예: "@media (max-width: 768px)" -> 768 추출
+            const match = key.match(/max-width:\s*(\d+)px/);
+            if (match) {
+              const maxWidth = parseInt(match[1], 10);
+              
+              // 현재 캔버스 너비가 미디어 쿼리 조건보다 작거나 같으면 스타일 적용
+              if (currentCanvasWidth <= maxWidth) {
+                 cssOutput += `${finalSelector} { ${variantCssBody} }\n`;
+              }
+            } else {
+              // 복잡한 쿼리는 그대로 출력
+              cssOutput += `${key} { ${finalSelector} { ${variantCssBody} } }\n`;
+            }
+          } else {
+            
+            let fullSelector = "";
+            if (key.includes("&")) {
+              fullSelector = key.replace(/&/g, finalSelector);
+            } else {
+              fullSelector = `${finalSelector}${key}`;
+            }
+
+            cssOutput += `${fullSelector} { ${variantCssBody} }\n`;
+          }
+        });
+
+        return cssOutput;
       })
-      .filter((css: string) => css !== "") // 빈 문자열 필터링
+      .filter((css: string) => css !== "")
       .join("\n");
   }, [
     elementsList,
@@ -147,6 +184,7 @@ export default function CanvasGlobalStyle() {
     isRootMode,
     currentRootId,
     activePageId,
+    currentCanvasWidth, // [중요] 캔버스 너비가 바뀌면 스타일을 다시 계산
   ]);
 
   const resetCss = `

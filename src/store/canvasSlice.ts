@@ -20,13 +20,19 @@ const initialState: CanvasState = {
     zoom: 1,
     scrollX: 0,
     scrollY: 0,
+    // [추가] 브레이크포인트 상태 관리
+    breakpoints: [
+      { id: "pc", name: "PC", width: 1920, height: 1080 },
+      { id: "tablet", name: "Tablet", width: 1024, height: 768 },
+      { id: "mobile", name: "Mobile", width: 375, height: 812 },
+    ],
   },
   selectedIds: [],
   selectedElementId: null,
   activeContainerId: "root",
   currentTool: "select",
   clipboard: [],
-  mode: "edit"
+  mode: "edit",
 };
 
 export const canvasSlice = createSlice({
@@ -124,7 +130,7 @@ export const {
   setTool,
   setCanvasState,
   copyToClipboard,
-  setMode
+  setMode,
 } = canvasSlice.actions;
 
 export default canvasSlice.reducer;

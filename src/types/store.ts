@@ -5,6 +5,7 @@ export interface CanvasSettings {
   zoom: number;           // 확대 배율 (1.0 = 100%)
   scrollX: number;        // 가로 스크롤 위치
   scrollY: number;        // 세로 스크롤 위치
+  breakpoints?: { id: string; name: string; width: number; height: number }[];
 }
 
 export interface EditorElement {
