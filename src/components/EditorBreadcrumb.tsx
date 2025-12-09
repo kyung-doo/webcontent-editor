@@ -97,7 +97,7 @@ export default function EditorBreadcrumb({
               )}
 
               {/* Root일 경우 rootName(페이지명)을 우선 표시 */}
-              {isRoot ? rootName : el.id || "Symbol"}
+              {isRoot ? rootName : el.id || el.type}
             </button>
           </React.Fragment>
         );

@@ -224,6 +224,26 @@ export default function useCanvasInteraction(
       const targetEl = (e.target as HTMLElement).closest("[data-id]");
       if (targetEl) {
         const id = targetEl.getAttribute("data-id")!;
+        const element = elements.find((e: EditorElement) => e.elementId === id);
+
+        // [수정] Locked 요소 클릭 시 선택 방지 로직 (isLocked 사용)
+        if (element?.isLocked) {
+           if (!e.shiftKey) dispatch(selectElement(null));
+           
+           drag.isSelecting = true;
+           if (containerRef.current) {
+             const rect = containerRef.current.getBoundingClientRect();
+             const box = {
+               x: e.clientX - rect.left,
+               y: e.clientY - rect.top,
+               w: 0,
+               h: 0,
+             };
+             setSelectionBox(box);
+             selectionBoxRef.current = box;
+           }
+           return;
+        }
 
         // 1. 선택되지 않은 요소를 클릭한 경우 (새로운 선택)
         if (!selectedIds.includes(id)) {
@@ -248,9 +268,11 @@ export default function useCanvasInteraction(
             ? [...selectedIds, id]
             : [id]
           : selectedIds;
+          
         targetIds.forEach((sid: string) => {
           const el = elements.find((e: any) => e.elementId === sid);
-          if (el)
+          // [수정] 이미 선택된 그룹 안에 locked 요소가 섞여있을 수 있으므로 체크 (isLocked 사용)
+          if (el && !el.isLocked)
             positions[sid] = {
               left: parseFloat(el.props.left || 0),
               top: parseFloat(el.props.top || 0),
@@ -295,6 +317,7 @@ export default function useCanvasInteraction(
       }
 
       if (drag.isResizing && resizeDataRef.current) {
+        // ... resizing logic (생략, 기존과 동일) ...
         const {
           startX,
           startY,
@@ -338,7 +361,7 @@ export default function useCanvasInteraction(
           height: item.h * scaleY,
           fontSize: item.fontSize ? item.fontSize * scaleY : undefined,
           initialWidth: item.w,
-          initialHeight: item.h, // 100% Fix
+          initialHeight: item.h,
         }));
         dispatch(resizeElements(updates));
         return;
@@ -364,7 +387,8 @@ export default function useCanvasInteraction(
           }
 
           if (e.altKey && !drag.isCloning) {
-            drag.isCloning = true;
+             // ... cloning logic (기존과 동일) ...
+             drag.isCloning = true;
             const resetMoves = drag.originalIds
               .map((id) => {
                 const pos = originalPositionsRef.current[id];
@@ -408,6 +432,10 @@ export default function useCanvasInteraction(
 
           const updates = drag.activeMovingIds
             .map((id) => {
+              // [수정] Locked 요소는 이동 로직에서도 제외 (isLocked 사용)
+              const el = elements.find((e: EditorElement) => e.elementId === id);
+              if (el?.isLocked) return null;
+
               const startPos = originalPositionsRef.current[id];
               if (startPos)
                 return {
@@ -449,7 +477,7 @@ export default function useCanvasInteraction(
 
       const wasDragging = drag.isDragging;
 
-      // 1. 로직 처리 먼저 실행 (상태 초기화 전)
+      // 1. 로직 처리 먼저 실행
       if (wasDragging) {
         drag.isCloning = false;
       } else {
@@ -459,12 +487,14 @@ export default function useCanvasInteraction(
             document.elementFromPoint(e.clientX, e.clientY) as HTMLElement
           )?.closest("[data-id]");
           const id = targetEl?.getAttribute("data-id");
-          const { selectedIds } = stateRef.current;
+          const { selectedIds, elements } = stateRef.current;
 
-          // justSelected가 아닐 때만(이미 선택되어 있던 것을 클릭했을 때만) 동작
-          // 새로 선택한 경우(justSelected=true)는 handleMouseDown에서 이미 처리됨
-          // ⭐ [수정] 이 시점에 justSelected는 아직 초기화되지 않았으므로 정상적으로 True임
-          if (
+          // [수정] locked 요소 체크 (isLocked 사용)
+          const element = elements.find((el: EditorElement) => el.elementId === id);
+          if (element?.isLocked) {
+              // locked면 아무것도 안함 (선택 안됨)
+          } 
+          else if (
             id &&
             id !== selectedIds[0] &&
             selectedIds.includes(id) &&
@@ -476,11 +506,11 @@ export default function useCanvasInteraction(
         }
       }
 
-      // 2. ⭐ [수정] 상태 초기화는 로직 처리 후에 수행
+      // 2. 상태 초기화
       drag.isDragging = false;
       drag.activeMovingIds = [];
       drag.clonedIds = [];
-      drag.justSelected = false; // 여기서 초기화해야 위 로직에서 체크 가능
+      drag.justSelected = false; 
       drag.currentDelta = { dx: 0, dy: 0 };
 
       if (drag.isSelecting) {
@@ -507,10 +537,17 @@ export default function useCanvasInteraction(
           const activeContainer = elements.find(
             (el: any) => el.elementId === activeContainerId
           );
+          
           activeContainer?.children.forEach((childId: string) => {
+            const element = elements.find((el: EditorElement) => el.elementId === childId);
+            
+            // [수정] 핵심: locked 요소는 드래그 선택 계산에서 제외 (isLocked 사용)
+            if (element?.isLocked) return;
+
             const rootNode = document.querySelector(
               `[data-id="${childId}"]`
             ) as HTMLElement;
+            
             if (rootNode) {
               let isHit = checkIntersection(rootNode.getBoundingClientRect());
               if (!isHit) {
@@ -551,6 +588,28 @@ export default function useCanvasInteraction(
       window.removeEventListener("mouseup", handleWindowMouseUp);
     };
   }, [dispatch]);
+
+  // [추가] Locked 요소 더블 클릭 방지 (편집 모드 진입 차단)
+  useEffect(() => {
+    const handleDblClick = (e: MouseEvent) => {
+      const targetEl = (e.target as HTMLElement).closest("[data-id]");
+      if (targetEl) {
+        const id = targetEl.getAttribute("data-id");
+        const { elements } = stateRef.current;
+        const el = elements.find((e: any) => e.elementId === id);
+        
+        // Locked 상태라면 이벤트 캡처 단계에서 차단하여 편집 모드 진입 방지 (isLocked 사용)
+        if (el?.isLocked) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }
+    };
+    
+    // capture: true 옵션을 사용하여 이벤트가 타겟에 도달하기 전에 가로챔
+    window.addEventListener("dblclick", handleDblClick, { capture: true });
+    return () => window.removeEventListener("dblclick", handleDblClick, { capture: true });
+  }, [stateRef]);
 
   return {
     selectionBox,

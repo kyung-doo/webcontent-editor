@@ -287,7 +287,9 @@ export default function RuntimeElement({
     }
   };
 
-  if (!element) return null;
+  if (!element || (element.isVisible === false)) {
+      return null;
+  }
 
   // --------------------------------------------------------------------------
   // 4. Rendering
@@ -300,12 +302,10 @@ export default function RuntimeElement({
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       className={`absolute ${
-        !isPreview && canInteract && !isDimmed ? "cursor-pointer" : ""
+        !isPreview && canInteract && !isDimmed && !element.isLocked ? "cursor-pointer" : ""
       } ${element.className || ""}`}
       style={{
         opacity: isDimmed ? (noOpacity ? 1 : 0.3) : 1,
-        // [수정] Active Container(편집 중)일 때 자기 자신(배경/테두리)을 투명하게 처리
-        // 스타일 우선순위를 높여 CSS 클래스나 GlobalStyle을 덮어씁니다.
         ...(isActiveContainer && !isPreview
           ? {
               backgroundColor: "transparent",

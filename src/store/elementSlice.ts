@@ -11,6 +11,10 @@ export interface EditorElement {
   children: string[];
   parentId: string | null;
   originalId?: string; // 복제 시 원본 ID 추적용
+
+  isVisible?: boolean; // 레이어 보임 숨김
+  isLocked?: boolean; // 레이어 잠금
+  isExpanded?: boolean; // 레이어 자식계층 펼침 유무
 }
 
 // [변경] 배열 대신 객체(Map) 구조 사용
@@ -34,6 +38,9 @@ const rootElement: EditorElement = {
   className: "",
   scripts: [],
   scriptValues: {},
+  isVisible: true,
+  isLocked: false,
+  isExpanded: true,
 };
 
 // [변경] 초기 상태를 객체 형태로 정의
@@ -402,6 +409,93 @@ export const elementSlice = createSlice({
       if (el && el.scriptValues)
         el.scriptValues[action.payload.scriptName] = {};
     },
+
+    toggleVisibility: (state, action) => {
+      const el = state.elements[action.payload];
+      if(el) {
+        el.isVisible = el.isVisible === undefined ? false : !el.isVisible;
+      }
+    },
+
+    toggleLock: (state, action) => {
+      const el = state.elements[action.payload];
+      if(el) {
+        el.isLocked = !el.isLocked;
+      }
+    },
+
+    toggleExpanded: (state, action: PayloadAction<string>) => {
+      const el = state.elements[action.payload];
+      if (el) {
+        el.isExpanded = el.isExpanded === undefined ? true : !el.isExpanded;
+      }
+    },
+
+    reorderElement: (
+      state,
+      action: PayloadAction<{
+        sourceId: string;
+        targetId: string;
+        position: "before" | "after" | "inside";
+      }>
+    ) => {
+      const { sourceId, targetId, position } = action.payload;
+      const elementId = sourceId;
+
+      // 1. 유효성 검사
+      if (elementId === targetId) return;
+
+      // 객체 구조(Map)에 맞게 요소 직접 접근
+      const element = state.elements[elementId];
+      const target = state.elements[targetId];
+
+      if (!element || !target) return;
+
+      // 순환 참조 방지 (타겟이 이동하려는 요소의 자손인지 확인)
+      let current = target;
+      while (current.parentId) {
+        if (current.parentId === elementId) return;
+        // 객체 접근
+        current = state.elements[current.parentId];
+        if (!current) break;
+      }
+
+      // 2. 기존 부모에서 제거
+      if (element.parentId) {
+        // 객체 접근
+        const oldParent = state.elements[element.parentId];
+        if (oldParent) {
+          oldParent.children = oldParent.children.filter(
+            (id) => id !== elementId
+          );
+        }
+      }
+
+      // 3. 새 위치에 추가
+      if (position === "inside") {
+        // 타겟의 자식으로 추가 (맨 끝)
+        target.children.push(elementId);
+        element.parentId = targetId;
+        target.isExpanded = true; // 이동 시 타겟 그룹 펼치기
+      } else {
+        // 타겟의 형제로 추가 (위/아래)
+        const newParentId = target.parentId;
+        if (newParentId) {
+          // 객체 접근
+          const newParent = state.elements[newParentId];
+          if (newParent) {
+            const targetIndex = newParent.children.indexOf(targetId);
+            if (targetIndex !== -1) {
+              const insertIndex =
+                position === "after" ? targetIndex + 1 : targetIndex;
+              newParent.children.splice(insertIndex, 0, elementId);
+              element.parentId = newParentId;
+            }
+          }
+        }
+      }
+    },
+
   },
 });
 
@@ -422,6 +516,10 @@ export const {
   ungroupElements,
   resizeElements,
   setElementAnchor,
+  toggleVisibility,
+  toggleLock,
+  toggleExpanded,
+  reorderElement
 } = elementSlice.actions;
 
 export default elementSlice.reducer;
