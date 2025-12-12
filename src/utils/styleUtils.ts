@@ -4,6 +4,12 @@ import { EditorElement } from "../store/elementSlice";
 export const camelToKebab = (str: string) => {
   return str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
 };
+export const toKebabCase = (str: string) =>
+  str.replace(/[A-Z]/g, (l) => `-${l.toLowerCase()}`);
+
+export const toCamelCase = (str: string) =>
+  str.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+
 
 // 스타일 객체를 CSS 문자열로 변환
 export const objectToCssString = (styleObj: React.CSSProperties) => {
@@ -31,3 +37,4 @@ export const getElementCssSelector = (element: EditorElement) => {
   // 3. 둘 다 없으면 고유한 data-id 사용 ([data-id="..."])
   return `[data-id="${element.elementId}"]`;
 };
+

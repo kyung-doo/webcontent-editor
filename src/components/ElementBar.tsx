@@ -58,7 +58,7 @@ export default function ElementBar() {
   return (
     <aside
       className={`relative border-r border-gray-300 bg-gray-50 shadow-inner flex flex-col transition-all duration-300 ease-in-out z-40 ${
-        isOpen ? "w-64 p-4" : "w-0 p-0 border-none"
+        isOpen ? "w-50 p-4" : "w-0 p-0 border-none"
       }`}
     >
       <button

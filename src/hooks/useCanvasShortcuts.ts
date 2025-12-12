@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import { useDispatch } from "react-redux";
 import {
   deleteElements,
@@ -25,24 +25,34 @@ export default function useCanvasShortcuts(
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 입력 필드(input, textarea)에서는 단축키 동작 안 함
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      )
-        return;
-
+      
+      // [수정] 입력 필드 검사: e.target을 사용하고, isContentEditable을 먼저 검사합니다.
+      const target = e.target as HTMLElement;
+      
+      const isInputActive = target instanceof HTMLInputElement ||
+                            target instanceof HTMLTextAreaElement ||
+                            target.isContentEditable; // AutocompleteInput (div) 처리
+      
+      // 입력 필드에 포커스가 있다면 전역 단축키를 실행하지 않고 종료합니다.
+      if (isInputActive) {
+          // [핵심 보강] 입력 필드에 포커스가 있을 경우, 이벤트의 전파를 완전히 중단하여
+          // Spacebar에 대한 전역 훅 로직(패닝)이 영향을 미치는 것을 원천 차단합니다.
+          e.stopPropagation(); 
+          return;
+      }
+      
       const isCtrl = e.ctrlKey || e.metaKey;
       const { selectedIds, elements, activeContainerId, clipboard } = stateRef.current;
 
       // 1. Spacebar (Panning Mode Toggle)
+      // 입력 필드가 아닐 경우에만 실행 (Spacebar의 브라우저 기본 동작인 스크롤을 막아야 함)
       if (e.code === "Space" && !e.repeat) {
-        e.preventDefault();
+        e.preventDefault(); 
         dragRef.current.isSpacePressed = true;
       }
 
       // 2. Delete / Backspace (삭제)
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.length > 0) {
+      if ((e.key === "Delete") && selectedIds.length > 0) {
         e.preventDefault();
         dispatch(deleteElements(selectedIds));
         dispatch(selectElement(null));
@@ -142,7 +152,6 @@ export default function useCanvasShortcuts(
         const offsetY = e.shiftKey ? 0 : 20 + Math.floor(Math.random() * 30);
 
         // 복제 실행 (helper 사용)
-        // clipboard 배열 전체를 넘기고, 그 중 root가 될 ID들만 추출해서 넘김
         const { newElements, idMap } = cloneElementsHierarchy(
           clipboard,
           clipboard.map((c: any) => c.elementId),
@@ -166,10 +175,7 @@ export default function useCanvasShortcuts(
         const targets = getDeepSelection(selectedIds, elements);
         dispatch(copyToClipboard(JSON.parse(JSON.stringify(targets))));
 
-        // (2) 캔버스에서 삭제 (부모만 삭제하면 자식은 Store 로직에 따라 처리됨을 가정하나, 안전하게 전체 삭제 요청)
-        // 만약 deleteElements가 cascade 삭제를 지원한다면 selectedIds만 보내도 되지만,
-        // 확실히 하기 위해 targets의 ID를 모두 보낼 수도 있습니다. 
-        // 여기서는 기존 로직(부모 삭제)을 유지하되, 클립보드에는 자식까지 확실히 담았습니다.
+        // (2) 캔버스에서 삭제
         dispatch(deleteElements(selectedIds));
         dispatch(selectElement(null));
       }

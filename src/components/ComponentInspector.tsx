@@ -7,6 +7,7 @@ import {
   addScriptToElement,
   resetScriptValues
 } from '../store/elementSlice';
+import { useModal } from '../context/ModalContext';
 
 // ⭐ 타입 import
 interface FieldDef {
@@ -26,15 +27,22 @@ export default function ComponentInspector({ selectedElement, availableScripts, 
   const dispatch = useDispatch();
   const selectedId = selectedElement.elementId; // elementId 사용
 
+  const { showModal } = useModal();
+
   // --- 핸들러 함수들 ---
   const handleRemoveScript = (scriptName: string) => {
     dispatch(removeScriptFromElement({ id: selectedId, scriptName }));
   };
 
   const handleResetScript = (scriptName: string) => {
-    if (confirm(`Reset ${scriptName.split('/').pop()} values?`)) {
-      dispatch(resetScriptValues({ id: selectedId, scriptName }));
-    }
+    showModal({
+      title: '알림',
+      body: `Reset ${scriptName.split('/').pop()} values?`,
+      showCancel: false,
+      onConfirm: () => {
+        dispatch(resetScriptValues({ id: selectedId, scriptName }));
+      }
+    });
   };
 
   const handleFieldChange = (scriptName: string, fieldName: string, value: any) => {
@@ -76,7 +84,7 @@ export default function ComponentInspector({ selectedElement, availableScripts, 
 
   // --- 렌더링 ---
   return (
-    <div className="mt-8 pt-4 border-t border-gray-200">
+    <div className="mt-2 pt-4 border-t border-gray-200">
       <div className="flex justify-between items-center mb-3">
         <h4 className="text-xs font-bold uppercase text-gray-500">Components</h4>
         <span className="text-[10px] text-gray-400">{selectedElement.scripts?.length || 0} attached</span>
