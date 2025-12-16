@@ -41,13 +41,11 @@ export default function ElementPropertiesPanel({
   const selectedElementId = selectedElement.elementId;
   const { showModal } = useModal();
 
-  // Canvas Settings (Breakpoints)
   const breakpoints =
     useSelector(
       (state: RootState) => state.canvas.canvasSettings.breakpoints
     ) || [];
 
-  // Local States
   const [availableScripts, setAvailableScripts] = useState<string[]>([]);
   const [scriptSchemas, setScriptSchemas] = useState<{
     [scriptName: string]: any;
@@ -55,14 +53,10 @@ export default function ElementPropertiesPanel({
   const [localId, setLocalId] = useState("");
   const [localClass, setLocalClass] = useState("");
 
-  // Context Management
   const [selectedBreakpoint, setSelectedBreakpoint] = useState<string>("base");
-
-  // Selector Addition State
   const [isAddingSelector, setIsAddingSelector] = useState(false);
   const [newSelectorInput, setNewSelectorInput] = useState("&");
 
-  // ID/Class Sync
   useEffect(() => {
     if (selectedElement) {
       setLocalId(selectedElement.id || "");
@@ -74,79 +68,65 @@ export default function ElementPropertiesPanel({
     selectedElement.className,
   ]);
 
-  // [최적화] selectedElement에서 필요한 값만 추출하여 의존성 관리
   const { elementId, scripts } = selectedElement;
 
-  // [수정] Scripts Refresh Logic
-  const refreshAll = useCallback(
-    async (forceReload = false) => {
-      // @ts-ignore
-      if (!window.electronAPI) return; // Electron이 아니면 로직 수행 안함
+  const refreshAll = useCallback(async (forceReload = false) => {
+    // @ts-ignore
+    if (!window.electronAPI) return; 
 
-      try {
+    try {
         // @ts-ignore
         const latestScripts = await window.electronAPI.getScripts();
         setAvailableScripts(latestScripts);
 
-        // 스크립트가 없는 경우 스키마 초기화 후 리턴
         if (!scripts || scripts.length === 0) {
-          setScriptSchemas({});
-          return;
+             setScriptSchemas({}); 
+             return; 
         }
 
         const validScripts: string[] = [];
-
-        // 유효성 검사 및 정리
+        
         scripts.forEach((scriptPath: string) => {
-          if (latestScripts.includes(scriptPath)) {
-            validScripts.push(scriptPath);
-          } else {
-            // 파일이 실제 디스크에서 삭제된 경우 엘리먼트에서도 제거 (단, API가 정상 동작할 때만)
-            if (latestScripts.length > 0) {
-              dispatch(
-                removeScriptFromElement({
-                  id: elementId,
-                  scriptName: scriptPath,
-                })
-              );
+            if (latestScripts.includes(scriptPath)) {
+                validScripts.push(scriptPath);
+            } else {
+                if (latestScripts.length > 0) { 
+                   dispatch(removeScriptFromElement({ 
+                       id: elementId, 
+                       scriptName: scriptPath 
+                   }));
+                }
             }
-          }
         });
 
-        // 유효한 스크립트들을 loadScript로 읽어와서 fields(스키마) 추출
         const schemas: any = {};
-        await Promise.all(
-          validScripts.map(async (scriptPath) => {
+        await Promise.all(validScripts.map(async (scriptPath) => {
             try {
-              // loadScript는 동적 import를 수행하여 모듈을 반환함
-              const module = await loadScript(scriptPath, forceReload);
-              // 모듈 내부에 fields 정의가 있으면 스키마로 저장
-              if (module?.default?.fields) {
-                schemas[scriptPath] = module.default.fields;
-              }
+                const module = await loadScript(scriptPath, forceReload);
+                if (module?.default?.fields) {
+                    schemas[scriptPath] = module.default.fields;
+                }
             } catch (e) {
-              console.error(`Failed to load schema for ${scriptPath}`, e);
+                console.error(`Failed to load schema for ${scriptPath}`, e);
             }
-          })
-        );
-
+        }));
+        
         setScriptSchemas(schemas);
         console.log("✅ Schemas refreshed for:", elementId);
-      } catch (error) {
+
+    } catch (error) {
         console.error("Failed to refresh scripts:", error);
-      }
-    },
-    [elementId, scripts, dispatch]
-  ); // [최적화] selectedElement 전체가 아닌 필요한 값만 의존
+    }
+  }, [elementId, scripts, dispatch]);
 
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
 
-  // --- Handlers: Update Styles ---
   const updateStyleAtPath = (
     newStyles: Record<string, any>,
-    path: string[]
+    path: string[],
+    isReplace = false 
   ) => {
     if (path.length === 0) {
       dispatch(updateElementProps({ id: selectedElementId, props: newStyles }));
@@ -157,10 +137,23 @@ export default function ElementPropertiesPanel({
     const rootValue = { ...(selectedElement.props[rootKey] || {}) };
 
     if (path.length === 1) {
-      const updatedVariant = { ...rootValue, ...newStyles };
+      let updatedVariant;
+      if (isReplace) {
+         const preservedProps: any = {};
+         Object.keys(rootValue).forEach(k => {
+             if (INTERNAL_PROPS.includes(k) || k.startsWith("@media")) {
+                 preservedProps[k] = rootValue[k];
+             }
+         });
+         updatedVariant = { ...newStyles, ...preservedProps };
+      } else {
+         updatedVariant = { ...rootValue, ...newStyles };
+      }
+      
       Object.keys(newStyles).forEach((k) => {
-        if (newStyles[k] === undefined) delete updatedVariant[k];
+        if (newStyles[k] === undefined && !isReplace) delete updatedVariant[k];
       });
+
       dispatch(
         updateElementProps({
           id: selectedElementId,
@@ -184,20 +177,13 @@ export default function ElementPropertiesPanel({
     }
   };
 
-  // --- Handlers: Selector Management ---
   const handleAddSelector = () => {
     if (!newSelectorInput.trim()) return;
-
     const newSelector = newSelectorInput.trim();
-
-    // 현재 Context(Breakpoint)에 빈 객체로 Selector 생성
     let pathToAdd = [];
     if (selectedBreakpoint !== "base") pathToAdd.push(selectedBreakpoint);
     pathToAdd.push(newSelector);
-
-    // Create entry in Redux
     updateStyleAtPath({}, pathToAdd);
-
     setNewSelectorInput("&");
     setIsAddingSelector(false);
   };
@@ -205,39 +191,29 @@ export default function ElementPropertiesPanel({
   const handleRenameSelector = (oldName: string, newName: string) => {
     if (!newName.trim() || oldName === newName) return;
     const validNewName = newName.trim();
-
-    // Check collision in current context
-    const contextStyles =
-      selectedBreakpoint === "base"
-        ? selectedElement.props
-        : selectedElement.props[selectedBreakpoint] || {};
+    const contextStyles = selectedBreakpoint === "base" ? selectedElement.props : selectedElement.props[selectedBreakpoint] || {};
 
     if (contextStyles[validNewName]) {
-      // Simple alert or modal could be used here
       console.warn("Selector name already exists");
       return;
     }
 
-    // Move properties from old key to new key
     if (selectedBreakpoint === "base") {
       const oldStyles = selectedElement.props[oldName];
       dispatch(
         updateElementProps({
           id: selectedElementId,
           props: {
-            [oldName]: undefined, // Delete old
-            [validNewName]: oldStyles, // Add new
+            [oldName]: undefined, 
+            [validNewName]: oldStyles, 
           },
         })
       );
     } else {
       const bpKey = selectedBreakpoint;
       const bpObj = { ...(selectedElement.props[bpKey] || {}) };
-
-      // Move styles
       bpObj[validNewName] = bpObj[oldName];
       delete bpObj[oldName];
-
       dispatch(
         updateElementProps({
           id: selectedElementId,
@@ -260,9 +236,7 @@ export default function ElementPropertiesPanel({
       onConfirm: () => {
         let parentPath = [];
         if (selectedBreakpoint !== "base") parentPath.push(selectedBreakpoint);
-
         if (parentPath.length === 0) {
-          // Root에서 삭제
           dispatch(
             updateElementProps({
               id: selectedElementId,
@@ -270,7 +244,6 @@ export default function ElementPropertiesPanel({
             })
           );
         } else {
-          // Breakpoint 내부에서 삭제
           const bpKey = parentPath[0];
           const bpObj = { ...selectedElement.props[bpKey] };
           delete bpObj[selectorName];
@@ -285,7 +258,6 @@ export default function ElementPropertiesPanel({
     });
   };
 
-  // --- Handlers: Attribute ---
   const commitAttribute = (name: string, value: string) => {
     if (selectedElementId) {
       if (
@@ -299,16 +271,13 @@ export default function ElementPropertiesPanel({
     }
   };
 
-  // --- Data Preparation for Rendering ---
   const rootProps =
     selectedBreakpoint === "base"
       ? selectedElement.props
       : selectedElement.props[selectedBreakpoint] || {};
 
-  // 1. Base Styles (Context Root)
-  const baseStyles = rootProps; // Contains styles + nested selectors
+  const baseStyles = rootProps;
 
-  // 2. Selectors (Context Children)
   const selectors = Object.keys(baseStyles).filter((key) => {
     if (INTERNAL_PROPS.includes(key)) return false;
     if (key.startsWith("@media")) return false;
@@ -318,7 +287,6 @@ export default function ElementPropertiesPanel({
 
   return (
     <div className="flex flex-col h-full bg-white overflow-y-auto">
-      {/* 1. Header & Attributes */}
       <div className="p-4 border-b shrink-0">
         <h3 className="text-xs font-bold uppercase text-gray-500 mb-2">
           Properties
@@ -354,7 +322,6 @@ export default function ElementPropertiesPanel({
         </div>
       </div>
 
-      {/* Text Content Editor (Only for Text Type) */}
       <div className="px-4 py-2 shrink-0">
         {selectedElement.type === "Text" && (
           <div className="space-y-1">
@@ -376,7 +343,6 @@ export default function ElementPropertiesPanel({
         )}
       </div>
 
-      {/* 2. Breakpoint Context Selection */}
       <div className="px-4 py-2 shrink-0">
         <h3 className="text-xs font-bold uppercase text-gray-500 mb-2">
           Styles
@@ -407,9 +373,7 @@ export default function ElementPropertiesPanel({
         </div>
       </div>
 
-      {/* 3. Style Sections (Flat View) */}
       <div className="flex-1 p-4 pt-0">
-        {/* --- SECTION 1: Base Styles --- */}
         <StyleSection
           title={<span className="text-gray-800">Base Styles</span>}
           styles={baseStyles}
@@ -417,7 +381,6 @@ export default function ElementPropertiesPanel({
           onUpdate={updateStyleAtPath}
         />
 
-        {/* --- SECTION 2: Selector Styles --- */}
         {selectors.map((sel) => (
           <StyleSection
             key={sel}
@@ -433,7 +396,6 @@ export default function ElementPropertiesPanel({
           />
         ))}
 
-        {/* --- SECTION 3: Add Selector --- */}
         <div className="mt-1">
           {isAddingSelector ? (
             <div className="flex gap-2 animate-in fade-in slide-in-from-top-1">
@@ -469,7 +431,6 @@ export default function ElementPropertiesPanel({
           )}
         </div>
 
-        {/* Component Inspector */}
         <div className="pt-1">
           <ComponentInspector
             selectedElement={selectedElement}

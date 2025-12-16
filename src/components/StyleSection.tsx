@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2, Edit2 } from "lucide-react";
 import StyleRow from "./StyleRow";
 import { toKebabCase, toCamelCase } from "../utils/styleUtils";
@@ -9,12 +9,12 @@ interface StyleSectionProps {
   initialLabel?: string;
   styles: Record<string, any>;
   path: string[];
-  onUpdate: (newStyles: Record<string, any>, path: string[]) => void;
+  onUpdate: (newStyles: Record<string, any>, path: string[], isReplace?: boolean) => void;
   onDeleteSection?: () => void;
   onRename?: (newName: string) => void;
 }
 
-function StyleSection({
+export default function StyleSection({
   title,
   initialLabel,
   styles,
@@ -25,22 +25,66 @@ function StyleSection({
 }: StyleSectionProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(initialLabel || "");
-
-  // [추가] 다음 새 행의 Key Input에 대한 Ref (포커스 이동용)
   const newKeyInputRef = useRef<HTMLDivElement>(null);
+
+  // [순서 유지 로직]
+  const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
+  const rowKeyRefs = useRef<Record<string, React.RefObject<HTMLDivElement>>>(
+    {}
+  );
+
+  useEffect(() => {
+    const currentKeys = Object.keys(styles).filter(
+      (key) =>
+        !INTERNAL_PROPS.includes(key) &&
+        !key.startsWith("@media") &&
+        (typeof styles[key] !== "object" || styles[key] === null)
+    );
+
+    setOrderedKeys((prev) => {
+      const nextOrder = prev.filter((k) => currentKeys.includes(k));
+      currentKeys.forEach((k) => {
+        if (!nextOrder.includes(k)) nextOrder.push(k);
+      });
+      return nextOrder;
+    });
+  }, [styles]);
 
   const handleCommitStyle = (
     oldKey: string,
     newKey: string,
     newValue: string
   ) => {
-    // toCamelCase는 통합된 헬퍼 함수를 사용
     const camelNew = toCamelCase(newKey.trim());
     const camelOld = oldKey ? toCamelCase(oldKey.trim()) : "";
-    const updates: any = {};
-    if (camelOld && camelOld !== camelNew) updates[camelOld] = undefined;
-    updates[camelNew] = newValue;
-    onUpdate(updates, path);
+
+    // 키 이름 변경 시: 로컬 순서 즉시 업데이트
+    let newOrderedKeys = [...orderedKeys];
+    if (camelOld && camelNew && camelOld !== camelNew) {
+      newOrderedKeys = newOrderedKeys.map((k) =>
+        k === camelOld ? camelNew : k
+      );
+      setOrderedKeys(newOrderedKeys);
+    } else if (!camelOld && camelNew) {
+      // 새 키 추가
+      if (!newOrderedKeys.includes(camelNew)) newOrderedKeys.push(camelNew);
+      setOrderedKeys(newOrderedKeys);
+    }
+
+    const reorderedStyles: Record<string, any> = {};
+    newOrderedKeys.forEach((k) => {
+      if (k === camelNew) {
+        reorderedStyles[k] = newValue;
+      } else if (k !== camelOld) {
+        reorderedStyles[k] = styles[k];
+      }
+    });
+
+    if (camelOld !== camelNew) {
+      onUpdate(reorderedStyles, path, true); // isReplace = true
+    } else {
+      onUpdate({ [camelNew]: newValue }, path, false);
+    }
   };
 
   const handleDeleteStyle = (key: string) => {
@@ -54,8 +98,13 @@ function StyleSection({
     }
     setIsEditing(false);
   };
-  
-  const internalPropsList = INTERNAL_PROPS as string[]; 
+
+  const getRowKeyRef = (key: string) => {
+    if (!rowKeyRefs.current[key]) {
+      rowKeyRefs.current[key] = React.createRef();
+    }
+    return rowKeyRefs.current[key];
+  };
 
   return (
     <div className="mb-6 relative group/section">
@@ -102,46 +151,42 @@ function StyleSection({
       </div>
 
       <div className="pl-2 border-l-2 border-gray-100 group-hover/section:border-blue-200 transition-colors">
-        {Object.entries(styles).map(([key, value]) => {
-          if (
-            internalPropsList.includes(key) ||
-            key.startsWith("@media") ||
-            (typeof value === "object" && value !== null)
-          )
-            return null;
-
+        {orderedKeys.map((key, index) => {
+          const value = styles[key];
+          if (value === undefined) return null;
           const displayLabel = toKebabCase(key);
+
+          const nextRef =
+            index < orderedKeys.length - 1
+              ? getRowKeyRef(orderedKeys[index + 1])
+              : newKeyInputRef;
 
           return (
             <StyleRow
-              key={`${path.join("-")}-${key}`}
+              key={`row-${index}`}
               propKey={displayLabel}
               propValue={value as string}
               onCommit={handleCommitStyle}
               onDelete={handleDeleteStyle}
-              // [수정] 다음 포커스는 New Property Input의 Key 필드입니다.
-              nextKeyInputRef={newKeyInputRef}
+              inputRef={getRowKeyRef(key)}
+              nextKeyInputRef={nextRef}
             />
           );
         })}
 
-        {/* New Property Input */}
         <div className="border-t border-gray-100 border-dashed pt-1 mt-1">
           <StyleRow
-            key={`${path.join("-")}-new`}
+            key="new-row"
             propKey=""
             propValue=""
             onCommit={handleCommitStyle}
             onDelete={() => {}}
             isNew={true}
-            // [수정] New Property Row는 자기 자신의 Key Ref를 nextKeyInputRef로 받습니다.
-            nextKeyInputRef={newKeyInputRef} 
-            inputRef={newKeyInputRef} // New Row의 Key Input Ref
+            nextKeyInputRef={newKeyInputRef}
+            inputRef={newKeyInputRef}
           />
         </div>
       </div>
     </div>
   );
 }
-
-export default StyleSection;

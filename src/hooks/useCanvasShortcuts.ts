@@ -26,13 +26,13 @@ export default function useCanvasShortcuts(
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       
+      
       // [수정] 입력 필드 검사: e.target을 사용하고, isContentEditable을 먼저 검사합니다.
       const target = e.target as HTMLElement;
       
       const isInputActive = target instanceof HTMLInputElement ||
                             target instanceof HTMLTextAreaElement ||
                             target.isContentEditable; // AutocompleteInput (div) 처리
-      
       // 입력 필드에 포커스가 있다면 전역 단축키를 실행하지 않고 종료합니다.
       if (isInputActive) {
           // [핵심 보강] 입력 필드에 포커스가 있을 경우, 이벤트의 전파를 완전히 중단하여
@@ -50,7 +50,7 @@ export default function useCanvasShortcuts(
         e.preventDefault(); 
         dragRef.current.isSpacePressed = true;
       }
-
+      
       // 2. Delete / Backspace (삭제)
       if ((e.key === "Delete") && selectedIds.length > 0) {
         e.preventDefault();

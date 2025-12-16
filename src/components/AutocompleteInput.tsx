@@ -12,35 +12,18 @@ export interface AutocompleteProps {
   onBlur?: () => void;
 }
 
-// 커서 위치를 맨 끝으로 이동시키는 유틸리티 (가장 안정적인 방식)
-const setCursorToEnd = (element: HTMLElement) => {
-  const range = document.createRange();
-  const selection = window.getSelection();
-
-  if (element.childNodes.length > 0) {
-    if (element.firstChild && element.firstChild.nodeType === Node.TEXT_NODE) {
-      range.setStart(element.firstChild, element.innerText.length);
-    } else {
-      range.setStart(element, 0);
-    }
-  } else {
-    range.setStart(element, 0);
-  }
-
-  range.collapse(true);
-  selection?.removeAllRanges();
-  selection?.addRange(range);
-};
-
 
 const AutocompleteInput = ({ 
-  value, onChange, onEnter, options, placeholder, autoFocus, className, inputRef, onBlur 
+  value = "", // [수정] 기본값 설정
+  onChange, onEnter, options, placeholder, autoFocus, className, inputRef, onBlur 
 }: AutocompleteProps) => {
   
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filteredOptions, setFilteredOptions] = useState<string[]>([]);
   
+  const ignoreNextOpen = useRef(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const internalInputRef = useRef<HTMLDivElement>(null);
   const finalInputRef = inputRef || internalInputRef;
@@ -58,31 +41,35 @@ const AutocompleteInput = ({
   };
 
   useEffect(() => { 
-    if (finalInputRef.current && initialValueRef.current.length > 0) {
-      finalInputRef.current.focus();
-      setCursorToEnd(finalInputRef.current);
-    }
+    setTimeout(() => setIsOpen(false));
     adjustHeight(); 
   }, []);
 
   useEffect(() => {
     if (finalInputRef.current && finalInputRef.current.innerText !== value) {
         finalInputRef.current.innerText = value;
-        finalInputRef.current.focus();
-        if (value.length > 0) {
-            setCursorToEnd(finalInputRef.current);
-        }
         adjustHeight();
     }
   }, [value]);
 
   useEffect(() => {
-    const filtered = options.filter(opt => 
-      opt && opt.toLowerCase().startsWith(value.toLowerCase())
+    // [수정] value가 undefined인 경우 방어 코드 추가
+    const safeValue = value || "";
+    const filtered = options.filter((opt: string) => 
+      opt && opt.toLowerCase().startsWith(safeValue.toLowerCase())
     );
     setFilteredOptions(filtered);
     setSelectedIndex(0); 
-    setIsOpen(value.length > 0 && filtered.length > 0);
+    
+    const shouldOpen = safeValue.length > 0 && filtered.length > 0;
+    
+    if (ignoreNextOpen.current) {
+        ignoreNextOpen.current = false;
+        setIsOpen(false);
+    } else {
+        setIsOpen(shouldOpen);
+    }
+    
   }, [value, options]);
 
 
@@ -93,9 +80,7 @@ const AutocompleteInput = ({
     }
   };
 
-  const handleFocus = () => {
-    // Autocomplete 목록 열림은 타이핑(value 변화)에 의존
-  }
+  const handleFocus = () => {}
   
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     const newValue = e.currentTarget.innerText.replace(/\n/g, ''); 
@@ -106,7 +91,6 @@ const AutocompleteInput = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const el = finalInputRef.current;
 
-    // [수정] 스페이스바 입력 처리
     if (e.code === 'Space') {
       e.preventDefault(); 
       e.stopPropagation(); 
@@ -114,7 +98,6 @@ const AutocompleteInput = ({
       return; 
     }
     
-    // Backspace/Delete 키로 엘리먼트가 사라지는 문제 방지
     if ((e.key === 'Backspace' || e.key === 'Delete') && el) {
         const selection = window.getSelection();
         const isCollapsedAtStart = selection?.isCollapsed && selection.anchorOffset === 0 && selection.focusOffset === 0;
@@ -135,14 +118,17 @@ const AutocompleteInput = ({
       if (filteredOptions.length > 0) {
         setSelectedIndex(prev => (prev - 1 + filteredOptions.length) % filteredOptions.length);
       }
-    } else if (e.key === 'Enter' || e.key === 'Tab') { // [수정] Enter/Tab 키 처리
+    } else if (e.key === 'Enter' || e.key === 'Tab') { 
       if (!e.shiftKey) { 
-        e.preventDefault();
+        e.preventDefault(); 
+        
+        setIsOpen(false); 
+        
         if (isOpen && filteredOptions.length > 0) {
           const selectedOption = filteredOptions[selectedIndex];
           handleSelect(selectedOption); 
         } else {
-          if (onEnter) onEnter(); // Key/Value 커밋 로직 호출
+          if (onEnter) onEnter();
         }
       }
     } else if (e.key === 'Escape') {
@@ -154,7 +140,10 @@ const AutocompleteInput = ({
   const handleSelect = (opt: string) => {
     onChange(opt); 
     setIsOpen(false);
-    finalInputRef.current?.focus(); 
+    
+    ignoreNextOpen.current = true;
+    
+    // onEnter를 즉시 호출 (포커스 이동)
     if (onEnter) onEnter();
   };
   
@@ -184,8 +173,8 @@ const AutocompleteInput = ({
               key={opt}
               onMouseDown={(e) => {
                 e.preventDefault(); 
-                handleSelect(opt);
               }}
+              onClick={() => handleSelect(opt)}
               className={`px-2 py-1 text-xs cursor-pointer truncate font-mono ${
                 index === selectedIndex ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50 text-gray-600'
               }`}
@@ -208,5 +197,4 @@ const AutocompleteInput = ({
     </div>
   );
 };
-
 export default AutocompleteInput;
