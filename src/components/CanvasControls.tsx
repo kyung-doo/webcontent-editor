@@ -200,7 +200,7 @@ export default function CanvasControls({
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden relative select-none">
       {/* Zoom Buttons */}
-      <div className="absolute bottom-5 right-5 z-50 flex gap-2 bg-white p-2 rounded shadow-md border border-gray-200">
+      <div className="absolute top-12 right-5 z-50 flex gap-2 bg-white p-2 rounded shadow-md border border-gray-200">
         <button
           onClick={() => handleZoom(-0.1)}
           className="px-2 py-1 hover:bg-gray-100 rounded"

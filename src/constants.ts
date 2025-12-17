@@ -194,6 +194,7 @@ export const INTERNAL_PROPS = [
   "isExpanded",
   "type",
   "name",
+  "_keysOrder"
 ];
 
 export const CSS_COLOR_NAMES = [

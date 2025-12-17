@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../store/store";
 import {
@@ -15,19 +9,11 @@ import {
 } from "../store/elementSlice";
 import ComponentInspector from "./ComponentInspector";
 import AutocompleteInput from "./AutocompleteInput";
-import {
-  Plus,
-  Smartphone,
-  Monitor,
-  X,
-  ChevronDown,
-} from "lucide-react";
+import { Plus, Smartphone, Monitor, X, ChevronDown } from "lucide-react";
 import { useModal } from "../context/ModalContext";
 import { loadScript } from "../utils/scriptManager";
 import StyleSection from "./StyleSection";
 import { INTERNAL_PROPS } from "../constants";
-
-
 
 // --- Main Component ---
 interface ElementPropertiesPanelProps {
@@ -70,54 +56,60 @@ export default function ElementPropertiesPanel({
 
   const { elementId, scripts } = selectedElement;
 
-  const refreshAll = useCallback(async (forceReload = false) => {
-    // @ts-ignore
-    if (!window.electronAPI) return; 
+  const refreshAll = useCallback(
+    async (forceReload = false) => {
+      // @ts-ignore
+      if (!window.electronAPI) return;
 
-    try {
+      try {
         // @ts-ignore
         const latestScripts = await window.electronAPI.getScripts();
         setAvailableScripts(latestScripts);
 
         if (!scripts || scripts.length === 0) {
-             setScriptSchemas({}); 
-             return; 
+          setScriptSchemas({});
+          return;
         }
 
         const validScripts: string[] = [];
-        
+
         scripts.forEach((scriptPath: string) => {
-            if (latestScripts.includes(scriptPath)) {
-                validScripts.push(scriptPath);
-            } else {
-                if (latestScripts.length > 0) { 
-                   dispatch(removeScriptFromElement({ 
-                       id: elementId, 
-                       scriptName: scriptPath 
-                   }));
-                }
+          if (latestScripts.includes(scriptPath)) {
+            validScripts.push(scriptPath);
+          } else {
+            if (latestScripts.length > 0) {
+              dispatch(
+                removeScriptFromElement({
+                  id: elementId,
+                  scriptName: scriptPath,
+                })
+              );
             }
+          }
         });
 
         const schemas: any = {};
-        await Promise.all(validScripts.map(async (scriptPath) => {
+        await Promise.all(
+          validScripts.map(async (scriptPath) => {
             try {
-                const module = await loadScript(scriptPath, forceReload);
-                if (module?.default?.fields) {
-                    schemas[scriptPath] = module.default.fields;
-                }
+              const module = await loadScript(scriptPath, forceReload);
+              if (module?.default?.fields) {
+                schemas[scriptPath] = module.default.fields;
+              }
             } catch (e) {
-                console.error(`Failed to load schema for ${scriptPath}`, e);
+              console.error(`Failed to load schema for ${scriptPath}`, e);
             }
-        }));
-        
+          })
+        );
+
         setScriptSchemas(schemas);
         console.log("✅ Schemas refreshed for:", elementId);
-
-    } catch (error) {
+      } catch (error) {
         console.error("Failed to refresh scripts:", error);
-    }
-  }, [elementId, scripts, dispatch]);
+      }
+    },
+    [elementId, scripts, dispatch]
+  );
 
   useEffect(() => {
     refreshAll();
@@ -126,7 +118,7 @@ export default function ElementPropertiesPanel({
   const updateStyleAtPath = (
     newStyles: Record<string, any>,
     path: string[],
-    isReplace = false 
+    isReplace = false
   ) => {
     if (path.length === 0) {
       dispatch(updateElementProps({ id: selectedElementId, props: newStyles }));
@@ -139,17 +131,17 @@ export default function ElementPropertiesPanel({
     if (path.length === 1) {
       let updatedVariant;
       if (isReplace) {
-         const preservedProps: any = {};
-         Object.keys(rootValue).forEach(k => {
-             if (INTERNAL_PROPS.includes(k) || k.startsWith("@media")) {
-                 preservedProps[k] = rootValue[k];
-             }
-         });
-         updatedVariant = { ...newStyles, ...preservedProps };
+        const preservedProps: any = {};
+        Object.keys(rootValue).forEach((k) => {
+          if (INTERNAL_PROPS.includes(k) || k.startsWith("@media")) {
+            preservedProps[k] = rootValue[k];
+          }
+        });
+        updatedVariant = { ...newStyles, ...preservedProps };
       } else {
-         updatedVariant = { ...rootValue, ...newStyles };
+        updatedVariant = { ...rootValue, ...newStyles };
       }
-      
+
       Object.keys(newStyles).forEach((k) => {
         if (newStyles[k] === undefined && !isReplace) delete updatedVariant[k];
       });
@@ -191,7 +183,10 @@ export default function ElementPropertiesPanel({
   const handleRenameSelector = (oldName: string, newName: string) => {
     if (!newName.trim() || oldName === newName) return;
     const validNewName = newName.trim();
-    const contextStyles = selectedBreakpoint === "base" ? selectedElement.props : selectedElement.props[selectedBreakpoint] || {};
+    const contextStyles =
+      selectedBreakpoint === "base"
+        ? selectedElement.props
+        : selectedElement.props[selectedBreakpoint] || {};
 
     if (contextStyles[validNewName]) {
       console.warn("Selector name already exists");
@@ -204,8 +199,8 @@ export default function ElementPropertiesPanel({
         updateElementProps({
           id: selectedElementId,
           props: {
-            [oldName]: undefined, 
-            [validNewName]: oldStyles, 
+            [oldName]: undefined,
+            [validNewName]: oldStyles,
           },
         })
       );

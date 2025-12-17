@@ -1,6 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { BrowserWindow } from 'electron';
-// 👇 쪼개진 리듀서들을 가져옵니다
 import elementReducer from '../src/store/elementSlice';
 import canvasReducer from '../src/store/canvasSlice';
 import pageReducer from '../src/store/pageSlice';
@@ -14,6 +13,7 @@ const mainMiddleware = (store: any) => (next: any) => (action: any) => {
 };
 
 export const mainStore = configureStore({
+  devTools: true,
   reducer: {
     elements: elementReducer,
     canvas: canvasReducer,

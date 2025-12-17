@@ -9,7 +9,11 @@ interface StyleSectionProps {
   initialLabel?: string;
   styles: Record<string, any>;
   path: string[];
-  onUpdate: (newStyles: Record<string, any>, path: string[], isReplace?: boolean) => void;
+  onUpdate: (
+    newStyles: Record<string, any>,
+    path: string[],
+    isReplace?: boolean
+  ) => void;
   onDeleteSection?: () => void;
   onRename?: (newName: string) => void;
 }
@@ -27,13 +31,18 @@ export default function StyleSection({
   const [editValue, setEditValue] = useState(initialLabel || "");
   const newKeyInputRef = useRef<HTMLDivElement>(null);
 
-  // [순서 유지 로직]
+  // [순서 유지 상태]
   const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
   const rowKeyRefs = useRef<Record<string, React.RefObject<HTMLDivElement>>>(
     {}
   );
 
+  // 1. 초기 로드 및 Redux 변경 시 순서 동기화 (단, _keysOrder가 있다면 우선순위)
   useEffect(() => {
+    // styles 객체에 저장된 순서 메타데이터(_keysOrder)가 있다면 그것을 사용
+    const savedOrder = styles._keysOrder as string[] | undefined;
+
+    // 현재 유효한 스타일 키 목록
     const currentKeys = Object.keys(styles).filter(
       (key) =>
         !INTERNAL_PROPS.includes(key) &&
@@ -42,10 +51,20 @@ export default function StyleSection({
     );
 
     setOrderedKeys((prev) => {
-      const nextOrder = prev.filter((k) => currentKeys.includes(k));
+      // 저장된 순서가 있다면 그것을 기반으로 정렬
+      let baseOrder =
+        savedOrder && Array.isArray(savedOrder) ? savedOrder : prev;
+
+      // 1. 유효하지 않은 키 제거
+      const nextOrder = baseOrder.filter((k) => currentKeys.includes(k));
+
+      // 2. 누락된 키(새로 추가된 키 등) 추가
       currentKeys.forEach((k) => {
-        if (!nextOrder.includes(k)) nextOrder.push(k);
+        if (!nextOrder.includes(k)) {
+          nextOrder.push(k);
+        }
       });
+
       return nextOrder;
     });
   }, [styles]);
@@ -58,7 +77,7 @@ export default function StyleSection({
     const camelNew = toCamelCase(newKey.trim());
     const camelOld = oldKey ? toCamelCase(oldKey.trim()) : "";
 
-    // 키 이름 변경 시: 로컬 순서 즉시 업데이트
+    // 키 변경 시 로컬 순서 즉시 업데이트
     let newOrderedKeys = [...orderedKeys];
     if (camelOld && camelNew && camelOld !== camelNew) {
       newOrderedKeys = newOrderedKeys.map((k) =>
@@ -66,25 +85,18 @@ export default function StyleSection({
       );
       setOrderedKeys(newOrderedKeys);
     } else if (!camelOld && camelNew) {
-      // 새 키 추가
       if (!newOrderedKeys.includes(camelNew)) newOrderedKeys.push(camelNew);
       setOrderedKeys(newOrderedKeys);
     }
 
-    const reorderedStyles: Record<string, any> = {};
-    newOrderedKeys.forEach((k) => {
-      if (k === camelNew) {
-        reorderedStyles[k] = newValue;
-      } else if (k !== camelOld) {
-        reorderedStyles[k] = styles[k];
-      }
-    });
+    const updates: any = {};
+    if (camelOld && camelOld !== camelNew) updates[camelOld] = undefined;
+    updates[camelNew] = newValue;
 
-    if (camelOld !== camelNew) {
-      onUpdate(reorderedStyles, path, true); // isReplace = true
-    } else {
-      onUpdate({ [camelNew]: newValue }, path, false);
-    }
+    // [중요] 순서 정보를 함께 저장 (_keysOrder)
+    updates["_keysOrder"] = newOrderedKeys;
+
+    onUpdate(updates, path, false);
   };
 
   const handleDeleteStyle = (key: string) => {
@@ -163,7 +175,7 @@ export default function StyleSection({
 
           return (
             <StyleRow
-              key={`row-${index}`}
+              key={`row-${key}`} // 고유 key 사용으로 컴포넌트 재생성 방지
               propKey={displayLabel}
               propValue={value as string}
               onCommit={handleCommitStyle}

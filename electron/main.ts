@@ -46,6 +46,7 @@ async function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false
     },
   });
 
@@ -54,7 +55,7 @@ async function createMainWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL as string);
     mainWindow.webContents.openDevTools(); // 개발자 도구 열기
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadURL(path.join(__dirname, '../dist/index.html'));
   }
 
   // 외부 링크 클릭 시 브라우저로 열기
@@ -70,13 +71,6 @@ async function createMainWindow() {
 function createPreviewWindow(width: number, height: number, pageId?: string) {
   if (previewWindow) {
     previewWindow.focus(); // 이미 있으면 포커스만
-    
-    // [옵션] 이미 열려있는 창이라도 페이지 이동을 원한다면 URL을 다시 로드할 수 있습니다.
-    // const hash = pageId ? `#/preview?pageId=${pageId}` : `#/preview`;
-    // const newUrl = isDev 
-    //   ? `${process.env.VITE_DEV_SERVER_URL}${hash}`
-    //   : `file://${path.join(__dirname, '../dist/index.html')}${hash}`;
-    // previewWindow.loadURL(newUrl);
 
     return;
   }
@@ -90,6 +84,7 @@ function createPreviewWindow(width: number, height: number, pageId?: string) {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false
     },
   });
 
@@ -184,7 +179,7 @@ app.whenReady().then(async () => {
     try {
       await installExtension([REDUX_DEVTOOLS, REACT_DEVELOPER_TOOLS], {
         loadExtensionOptions: { allowFileAccess: true },
-        forceDownload: false,
+        forceDownload: true,
       });
       console.log('DevTools Extensions Installed.');
     } catch (e) {

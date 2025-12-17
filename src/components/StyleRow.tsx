@@ -45,8 +45,8 @@ export default function StyleRow({
   onCommit,
   onDelete,
   isNew,
-  nextKeyInputRef, 
-  inputRef, 
+  nextKeyInputRef,
+  inputRef,
 }: StyleRowProps) {
   const [key, setKey] = useState(propKey);
   // [수정] propValue가 undefined일 경우 빈 문자열 사용
@@ -61,28 +61,26 @@ export default function StyleRow({
     setVal(propValue || "");
   }, [propKey, propValue]);
 
-
   // Key 필드에서 Tab/Enter 처리: Value 필드로 포커스 이동
   const handleKeyEnter = useCallback(() => {
     isFocusTransferring.current = true;
-    
+
     if (valueInputRef.current) {
-        valueInputRef.current.focus();
-        setCursorToEnd(valueInputRef.current);
+      valueInputRef.current.focus();
+      setCursorToEnd(valueInputRef.current);
     }
-    
+
     setTimeout(() => {
-        isFocusTransferring.current = false;
+      isFocusTransferring.current = false;
     }, 100);
-    
   }, [valueInputRef]);
 
-
   // Value 필드에서 Enter/Tab 처리: Commit 후 다음 Key 필드로 포커스 이동
-  const handleValueEnter = useCallback(() => {
-    if (key && val) {
-      onCommit(propKey, key, val);
-    } else if (!key && !val && !isNew) {
+  const handleValueEnter = useCallback((finalVal?: string) => {
+    const valueToCommit = finalVal !== undefined ? finalVal : val;
+    if (key && valueToCommit) {
+      onCommit(propKey, key, valueToCommit);
+    } else if (!key && !valueToCommit && !isNew) {
        onDelete(propKey);
     }
     
@@ -91,21 +89,21 @@ export default function StyleRow({
       setVal("");
     }
     
+    // Slight delay to allow DOM updates
     setTimeout(() => {
         if (nextKeyInputRef?.current) {
             nextKeyInputRef.current.focus();
             setCursorToEnd(nextKeyInputRef.current);
         }
-    }, 50); 
+    }, 10);
     
   }, [key, val, propKey, onCommit, onDelete, isNew, nextKeyInputRef]);
-  
+
   const commitChange = useCallback(() => {
-    
     if (isFocusTransferring.current) {
-        return;
+      return;
     }
-    
+
     if (key && val) {
       if (key !== propKey || val !== propValue) {
         onCommit(propKey, key, val);
@@ -119,11 +117,17 @@ export default function StyleRow({
     }
   }, [key, val, propKey, propValue, onCommit, isNew, onDelete]);
 
-
   const isColorProp = useMemo(() => {
     const k = key.toLowerCase();
     return (
-      k.includes("color") || k.includes("background") || k.includes("fill") || k.includes("stroke") || k.includes("border") || k.includes("shadow") || k.includes("outline") || k.includes("column-rule")
+      k.includes("color") ||
+      k.includes("background") ||
+      k.includes("fill") ||
+      k.includes("stroke") ||
+      k.includes("border") ||
+      k.includes("shadow") ||
+      k.includes("outline") ||
+      k.includes("column-rule")
     );
   }, [key]);
 
@@ -131,12 +135,14 @@ export default function StyleRow({
     if (!isColorProp) return [];
     // [수정] str이 null/undefined인 경우 방어
     if (!str) return [];
-    
+
     const colorRegex = new RegExp(
-      `(#(?:[0-9a-fA-F]{3}){1,2}\\b)|((?:rgb|hsl)a?\\s*\\([^)]+\\))|(\\b(?:${CSS_COLOR_NAMES.join("|")})\\b)`, 
-      'gi'
+      `(#(?:[0-9a-fA-F]{3}){1,2}\\b)|((?:rgb|hsl)a?\\s*\\([^)]+\\))|(\\b(?:${CSS_COLOR_NAMES.join(
+        "|"
+      )})\\b)`,
+      "gi"
     );
-    
+
     let match;
     const colors = [];
     while ((match = colorRegex.exec(str)) !== null) {
@@ -145,15 +151,20 @@ export default function StyleRow({
     return colors;
   };
 
-  const detectedColors = useMemo(() => extractAllColors(val), [val, isColorProp]);
+  const detectedColors = useMemo(
+    () => extractAllColors(val),
+    [val, isColorProp]
+  );
 
   const handleMultiColorChange = (oldColor: string, newColor: string) => {
-    const regex = new RegExp(`\\b${oldColor.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+    const regex = new RegExp(
+      `\\b${oldColor.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`,
+      "i"
+    );
     const newVal = val.replace(regex, newColor);
     setVal(newVal);
     onCommit(propKey, key, newVal);
   };
-
 
   return (
     <div className="flex items-start group text-xs hover:bg-gray-50 -ml-2 pl-2 rounded py-0.5 relative">
@@ -162,7 +173,7 @@ export default function StyleRow({
           value={key}
           onChange={setKey}
           onBlur={commitChange}
-          onEnter={handleKeyEnter} 
+          onEnter={handleKeyEnter}
           options={CSS_PROPERTIES}
           placeholder={isNew ? "property" : ""}
           className={`w-full bg-transparent border-none focus:ring-0 focus:outline-none font-mono ${

@@ -4,7 +4,9 @@ import canvasReducer from './canvasSlice';
 import pageSlice from './pageSlice';
 import { syncMiddleware } from './syncMiddleware';
 
+
 export const store = configureStore({
+  devTools: true,
   reducer: {
     page: pageSlice,
     elements: elementReducer, // Data
