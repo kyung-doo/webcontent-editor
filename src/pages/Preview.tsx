@@ -53,6 +53,8 @@ function PreviewContent() {
           style={{
             backgroundColor: rootElement.props?.backgroundColor || '#ffffff',
             overflow: rootElement.props?.overflow || 'hidden',
+            // [핵심] 전역 폰트 적용: activeFont가 변경되면 전체 폰트가 변경됩니다.
+            fontFamily: activeFont 
           }}
         >
           {rootElement.children?.map((childId: string) => (

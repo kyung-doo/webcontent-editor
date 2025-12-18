@@ -27,8 +27,20 @@ function AppContent() {
   };
 
   const handlePlay = () => {
-    // Play logic...
-    alert(`Playing preview with font: ${activeFont}`);
+    // 2. Electron에게 새 창 열라고 요청
+    if (window.electronAPI) {
+      // [수정] Electron 메인 프로세스로 pageId를 함께 전달합니다.
+      // (Electron의 main.js/preload.js에서도 인자를 받아 URL 쿼리를 붙이도록 처리 필요)
+      window.electronAPI.openPreview(
+        canvasSettings.width,
+        canvasSettings.height,
+        activePageId
+      );
+    } else {
+      // (웹 브라우저 테스트용) 새 탭으로 열기
+      // [수정] URL 뒤에 쿼리 파라미터 추가 (?pageId=...)
+      window.open(`/#/preview?pageId=${activePageId}`, "_blank");
+    }
   };
 
   return (
