@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron';
 import elementReducer from '../src/store/elementSlice';
 import canvasReducer from '../src/store/canvasSlice';
 import pageReducer from '../src/store/pageSlice';
+import fontReducer from '../src/store/fontSlice';
 
 const mainMiddleware = (store: any) => (next: any) => (action: any) => {
   const result = next(action);
@@ -18,6 +19,7 @@ export const mainStore = configureStore({
     elements: elementReducer,
     canvas: canvasReducer,
     page: pageReducer,
+    font: fontReducer
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(mainMiddleware),
 });

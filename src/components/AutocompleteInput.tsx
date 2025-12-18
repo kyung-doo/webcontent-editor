@@ -11,6 +11,8 @@ export interface AutocompleteProps {
   className?: string;
   inputRef?: React.RefObject<HTMLDivElement>;
   onBlur?: () => void;
+  /** 빈 값일 때도 포커스 시 자동으로 목록을 열지 여부 */
+  openOnEmpty?: boolean;
 }
 
 const AutocompleteInput = ({
@@ -23,17 +25,22 @@ const AutocompleteInput = ({
   className,
   inputRef,
   onBlur,
+  openOnEmpty = false, // 기본값 false (Key 필드 등은 입력 시에만 열리게 유지)
 }: AutocompleteProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  
+
   const filteredOptions = useMemo(() => {
     const safeValue = value || "";
+    // openOnEmpty가 true이고 값이 비어있으면 모든 옵션 반환
+    if (openOnEmpty && safeValue === "") {
+      return options;
+    }
     return options.filter(
       (opt: string) =>
         opt && opt.toLowerCase().startsWith(safeValue.toLowerCase())
     );
-  }, [value, options]);
+  }, [value, options, openOnEmpty]);
 
   const internalRef = useRef<HTMLDivElement>(null);
   const finalInputRef = inputRef || internalRef;
@@ -60,6 +67,20 @@ const AutocompleteInput = ({
     }
   }, [value]);
 
+  const handleFocus = () => {
+    // 포커스 시 빈 값이어도 열리도록 설정된 경우 목록 오픈
+    if (openOnEmpty) {
+      setIsOpen(true);
+    }
+  };
+
+  const handleClick = () => {
+    // 클릭 시에도 동일하게 동작 (이미 포커스된 상태에서 클릭 시 등)
+    if (openOnEmpty) {
+      setIsOpen(true);
+    }
+  };
+
   const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     if (
       !e.relatedTarget ||
@@ -75,7 +96,8 @@ const AutocompleteInput = ({
     onChange(newValue);
     adjustHeight();
 
-    if (newValue.length > 0) {
+    // openOnEmpty가 true면 텍스트 길이가 0이어도 오픈
+    if (newValue.length > 0 || openOnEmpty) {
       setIsOpen(true);
     } else {
       setIsOpen(false);
@@ -85,11 +107,10 @@ const AutocompleteInput = ({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const el = finalInputRef.current;
-    
+
     // [중요] 엔터키 줄바꿈 전역 방지
-    // Key, Value 필드 모두에서 엔터키로 인한 줄바꿈을 막습니다.
     if (e.key === "Enter") {
-        e.preventDefault();
+      e.preventDefault();
     }
 
     if (e.code === "Space") {
@@ -107,15 +128,15 @@ const AutocompleteInput = ({
     }
 
     if (!isOpen) {
-        if (e.key === "ArrowDown") {
-            e.preventDefault();
-            if (value.length > 0) setIsOpen(true);
-        } else if (e.key === "Enter") {
-             // 닫혀있을 때 엔터: 줄바꿈은 이미 막혔고, onEnter 호출
-             setIsOpen(false);
-             if (onEnter) onEnter();
-        }
-        return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        // openOnEmpty가 true면 빈 값에서도 화살표로 오픈 가능
+        if (value.length > 0 || openOnEmpty) setIsOpen(true);
+      } else if (e.key === "Enter") {
+        setIsOpen(false);
+        if (onEnter) onEnter();
+      }
+      return;
     }
 
     // 드롭다운이 열려 있을 때
@@ -130,20 +151,19 @@ const AutocompleteInput = ({
           (prev) => (prev - 1 + filteredOptions.length) % filteredOptions.length
         );
     } else if (e.key === "Enter") {
-        // 엔터: 선택 수행
-        if (filteredOptions.length > 0) {
-            handleSelect(filteredOptions[selectedIndex], true);
-        } else {
-            setIsOpen(false);
-            if (onEnter) onEnter();
-        }
+      // 엔터: 선택 수행
+      if (filteredOptions.length > 0) {
+        handleSelect(filteredOptions[selectedIndex], true);
+      } else {
+        setIsOpen(false);
+        if (onEnter) onEnter();
+      }
     } else if (e.key === "Tab") {
-        if (!e.shiftKey && filteredOptions.length > 0) {
-            // 탭: 선택하되 포커스는 유지하지 않음 (shouldRefocus: false) -> 다음 필드로 자연스럽게 이동
-            handleSelect(filteredOptions[selectedIndex], false);
-        } else {
-            setIsOpen(false);
-        }
+      if (!e.shiftKey && filteredOptions.length > 0) {
+        handleSelect(filteredOptions[selectedIndex], false);
+      } else {
+        setIsOpen(false);
+      }
     } else if (e.key === "Escape") {
       e.preventDefault();
       setIsOpen(false);
@@ -152,42 +172,34 @@ const AutocompleteInput = ({
 
   const handleSelect = (opt: string, shouldRefocus = true) => {
     if (!shouldRefocus) {
-        // [Tab 키 처리]
-        // Tab 키를 눌렀을 때 DOM 업데이트가 브라우저의 기본 포커스 이동보다 먼저 일어나
-        // 포커스가 튀는 것을 방지하기 위해 setTimeout을 사용합니다.
-        setIsOpen(false);
-        setTimeout(() => {
-            onChange(opt);
-            
-            // [수정] Tab 키로 선택 시에도 onEnter를 호출합니다.
-            // Value 필드처럼 onEnter가 '새 줄 추가'로 연결된 경우, 
-            // 탭을 눌렀을 때 'Add Header' 버튼에 멈추지 않고 
-            // 바로 새 줄을 생성하여 그곳(New Key)으로 포커스가 이동하도록 흐름을 이어줍니다.
-            if (onEnter) onEnter(opt);
-        }, 0);
-        return;
+      // [Tab 키 처리]
+      setIsOpen(false);
+      setTimeout(() => {
+        onChange(opt);
+        if (onEnter) onEnter(opt);
+      }, 0);
+      return;
     }
 
     onChange(opt);
-    setIsOpen(false); 
-    
-    // DOM 업데이트 (Enter/Click 시에만 즉시 수행)
+    setIsOpen(false);
+
+    // DOM 업데이트
     if (finalInputRef.current) {
-        if (shouldRefocus) {
-            finalInputRef.current.innerText = opt;
-            adjustHeight();
-            
-            // 포커스 복구
-            const range = document.createRange();
-            const sel = window.getSelection();
-            range.selectNodeContents(finalInputRef.current);
-            range.collapse(false);
-            sel?.removeAllRanges();
-            sel?.addRange(range);
-        }
+      if (shouldRefocus) {
+        finalInputRef.current.innerText = '';
+        adjustHeight();
+
+        // 포커스 복구
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(finalInputRef.current);
+        range.collapse(false);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
     }
 
-    // [중요] onEnter는 모든 포커스/DOM 작업이 끝난 후 '마지막'에 호출합니다.
     if (onEnter) onEnter(opt);
   };
 
@@ -199,6 +211,8 @@ const AutocompleteInput = ({
         contentEditable="true"
         onInput={handleInput}
         onBlur={handleBlur}
+        onFocus={handleFocus} // 포커스 핸들러
+        onClick={handleClick} // 클릭 핸들러 추가 (포커스된 상태 클릭 대응)
         onKeyDown={handleKeyDown}
         data-placeholder={placeholder}
         autoFocus={autoFocus}
@@ -213,7 +227,7 @@ const AutocompleteInput = ({
           {filteredOptions.map((opt: string, index: number) => (
             <li
               key={opt}
-              onMouseDown={(e) => e.preventDefault()} 
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleSelect(opt, true)}
               className={`px-2 py-1 text-xs cursor-pointer truncate font-mono ${
                 index === selectedIndex
@@ -237,6 +251,5 @@ const AutocompleteInput = ({
     </div>
   );
 };
-
 
 export default AutocompleteInput;

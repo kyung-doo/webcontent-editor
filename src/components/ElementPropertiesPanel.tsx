@@ -32,12 +32,17 @@ export default function ElementPropertiesPanel({
       (state: RootState) => state.canvas.canvasSettings.breakpoints
     ) || [];
 
+  const fonts = useSelector((state: RootState) => state.font.fonts).map(x => x.name);
+
   const [availableScripts, setAvailableScripts] = useState<string[]>([]);
   const [scriptSchemas, setScriptSchemas] = useState<{
     [scriptName: string]: any;
   }>({});
   const [localId, setLocalId] = useState("");
   const [localClass, setLocalClass] = useState("");
+  
+  // [추가] 텍스트 내용을 위한 로컬 상태 (한글 IME 문제 해결용)
+  const [localText, setLocalText] = useState("");
 
   const [selectedBreakpoint, setSelectedBreakpoint] = useState<string>("base");
   const [isAddingSelector, setIsAddingSelector] = useState(false);
@@ -47,11 +52,14 @@ export default function ElementPropertiesPanel({
     if (selectedElement) {
       setLocalId(selectedElement.id || "");
       setLocalClass(selectedElement.className || "");
+      // [추가] 요소가 선택될 때만 로컬 텍스트 초기화 (타이핑 중 업데이트 방지)
+      setLocalText(selectedElement.props.text || "");
     }
   }, [
     selectedElement.elementId,
-    selectedElement.id,
-    selectedElement.className,
+    // selectedElement.id, // id나 class가 바뀔 때 텍스트를 초기화할 필요는 없지만, 안전하게 유지
+    // selectedElement.className,
+    // 중요: selectedElement.props.text는 의존성에서 제외하여 타이핑 중 루프 방지
   ]);
 
   const { elementId, scripts } = selectedElement;
@@ -294,7 +302,11 @@ export default function ElementPropertiesPanel({
               value={localId}
               onChange={(e) => setLocalId(e.target.value)}
               onBlur={() => commitAttribute("id", localId)}
-              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              onKeyDown={(e) => {
+                // 한글 조합 중이면 엔터키 처리 방지 (중복 입력 방지)
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
               className="flex-1 min-w-0  focus:outline-none text-xs text-gray-700 font-mono py-1"
               placeholder="id"
             />
@@ -323,15 +335,18 @@ export default function ElementPropertiesPanel({
             <span className="text-xs font-bold text-gray-600">Content</span>
             <textarea
               rows={2}
-              value={selectedElement.props.text || ""}
-              onChange={(e) =>
+              // [수정] localText 사용 (props.text 직접 바인딩 X)
+              value={localText}
+              onChange={(e) => {
+                const newVal = e.target.value;
+                setLocalText(newVal); // 1. 로컬 상태 즉시 업데이트
                 dispatch(
                   updateElementProps({
                     id: selectedElementId!,
-                    props: { text: e.target.value },
+                    props: { text: newVal }, // 2. 리덕스에 업데이트 요청 (비동기)
                   })
-                )
-              }
+                );
+              }}
               className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none resize-none font-mono"
             />
           </div>
@@ -374,6 +389,7 @@ export default function ElementPropertiesPanel({
           styles={baseStyles}
           path={selectedBreakpoint === "base" ? [] : [selectedBreakpoint]}
           onUpdate={updateStyleAtPath}
+          fontOptions={fonts}
         />
 
         {selectors.map((sel) => (
@@ -388,6 +404,7 @@ export default function ElementPropertiesPanel({
             onUpdate={updateStyleAtPath}
             onDeleteSection={() => handleDeleteSelector(sel)}
             onRename={(newName) => handleRenameSelector(sel, newName)}
+            fontOptions={fonts}
           />
         ))}
 
@@ -398,7 +415,11 @@ export default function ElementPropertiesPanel({
                 type="text"
                 value={newSelectorInput}
                 onChange={(e) => setNewSelectorInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddSelector()}
+                onKeyDown={(e) => {
+                  // 한글 조합 중이면 엔터키 추가 방지
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === "Enter") handleAddSelector();
+                }}
                 placeholder=":hover, .active"
                 className="flex-1 border rounded px-2 py-1 text-xs focus:outline-blue-500 font-mono"
                 autoFocus

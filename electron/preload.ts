@@ -6,16 +6,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getScripts: () => ipcRenderer.invoke('get-scripts'),
   openPreview: (width: number, height: number, pageId: string) => ipcRenderer.send('open-preview', width, height, pageId),
 
-  // 1. [Renderer -> Main] 액션 보내기
+  // [Renderer -> Main] 액션 보내기
   dispatch: (action: any) => ipcRenderer.send('dispatch-main', action),
 
-  // 2. [Main -> Renderer] 액션 받기 (리스너 등록)
+  // [Main -> Renderer] 액션 받기 (리스너 등록)
   onDispatch: (callback: (action: any) => void) => {
     const subscription = (_: any, action: any) => callback(action);
     ipcRenderer.on('dispatch-renderer', subscription);
     return () => ipcRenderer.removeListener('dispatch-renderer', subscription);
   },
   
-  // 3. 초기 상태 가져오기
+  // 초기 상태 가져오기
   getInitialState: () => ipcRenderer.invoke('get-initial-state'),
+
+  // 스크립트 vscode 실행
+  openInVSCode: (path: string) => ipcRenderer.invoke('open-in-vscode', path),
+  
+  getFonts: () => ipcRenderer.invoke("get-fonts"),
+  fetchUrl: (url: string) => ipcRenderer.invoke("fetch-url", url),
+
 })

@@ -17,7 +17,8 @@ interface StyleRowProps {
   onDelete: (key: string) => void;
   isNew?: boolean;
   nextKeyInputRef?: React.RefObject<HTMLDivElement>;
-  inputRef?: React.RefObject<HTMLDivElement>; // StyleRow에서 Key inputRef를 받기 위한 속성 추가
+  inputRef?: React.RefObject<HTMLDivElement>;
+  fontOptions?: string[];
 }
 
 const setCursorToEnd = (element: HTMLElement) => {
@@ -47,9 +48,10 @@ export default function StyleRow({
   isNew,
   nextKeyInputRef,
   inputRef,
+  fontOptions = [],
 }: StyleRowProps) {
+
   const [key, setKey] = useState(propKey);
-  // [수정] propValue가 undefined일 경우 빈 문자열 사용
   const [val, setVal] = useState(propValue || "");
 
   const keyInputRef = inputRef || useRef<HTMLDivElement>(null);
@@ -117,6 +119,14 @@ export default function StyleRow({
     }
   }, [key, val, propKey, propValue, onCommit, isNew, onDelete]);
 
+  const isFontFamily = 
+    key.toLowerCase() === "fontfamily" || 
+    key.toLowerCase() === "font-family";
+    
+  const valueOptions = isFontFamily 
+    ? fontOptions 
+    : (PROPERTY_VALUES[toCamelCase(key)] || []);
+
   const isColorProp = useMemo(() => {
     const k = key.toLowerCase();
     return (
@@ -133,7 +143,6 @@ export default function StyleRow({
 
   const extractAllColors = (str: string) => {
     if (!isColorProp) return [];
-    // [수정] str이 null/undefined인 경우 방어
     if (!str) return [];
 
     const colorRegex = new RegExp(
@@ -157,10 +166,16 @@ export default function StyleRow({
   );
 
   const handleMultiColorChange = (oldColor: string, newColor: string) => {
+    // 특수문자 이스케이프 처리
+    const escapedOld = oldColor.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const startBoundary = /^[a-zA-Z0-9_]/.test(oldColor) ? "\\b" : "";
+    const endBoundary = /[a-zA-Z0-9_]$/.test(oldColor) ? "\\b" : "";
+
     const regex = new RegExp(
-      `\\b${oldColor.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`,
+      `${startBoundary}${escapedOld}${endBoundary}`,
       "i"
     );
+
     const newVal = val.replace(regex, newColor);
     setVal(newVal);
     onCommit(propKey, key, newVal);
@@ -192,7 +207,7 @@ export default function StyleRow({
               <PickrWidget
                 key={`${propKey}-${index}`}
                 initialColor={color.value}
-                onChange={(newColor) => {
+                onChange={(newColor: string) => {
                   handleMultiColorChange(color.value, newColor);
                 }}
               />
@@ -205,10 +220,11 @@ export default function StyleRow({
           onChange={setVal}
           onBlur={commitChange}
           onEnter={handleValueEnter}
-          options={PROPERTY_VALUES[toCamelCase(key)] || []}
+          options={valueOptions}
           placeholder=""
           className="w-full text-gray-800 font-mono"
           inputRef={valueInputRef}
+          openOnEmpty={true}
         />
       </div>
 

@@ -1,13 +1,5 @@
 import React, { useEffect, useState } from 'react';
 
-// ----------------------------------------------------------------------
-// 🚨 [Mocking Section] - 컴파일 오류 해결을 위한 임시 정의
-// 실제 프로젝트에서는 hooks 폴더 등에서 가져와야 할 수 있으나,
-// 여기서는 토글 기능을 제거하므로 usePannelToggle은 필요 없습니다.
-// ----------------------------------------------------------------------
-
-// --- 아이콘 컴포넌트들 ---
-
 const FolderIcon = () => (
   <svg className="w-10 h-10 text-yellow-400 mb-1" fill="currentColor" viewBox="0 0 20 20">
     <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
@@ -104,6 +96,26 @@ export default function AssetPanel() {
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
+  const handleDoubleClick = async (file: AssetFile) => {
+    // 폴더는 더블클릭이 아닌 기존 onClick 로직(또는 별도 네비게이션)을 따름
+    if (file.isFolder) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    
+    // 스크립트 파일인 경우
+    if (scriptExtensions.includes(ext)) {
+      if (window.electronAPI && window.electronAPI.openInVSCode) {
+        try {
+            await window.electronAPI.openInVSCode(file.path);
+        } catch (e) {
+            console.error("VS Code 실행 실패:", e);
+        }
+      } else {
+        console.log(`Open VS Code for: ${file.path}`);
+      }
+    }
+  };
+
   const imageExtensions = ['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'bmp', 'ico'];
   const scriptExtensions = ['js', 'jsx', 'ts', 'tsx', 'json'];
 
@@ -166,12 +178,14 @@ export default function AssetPanel() {
                 onClick={() => {
                   if (file.isFolder) loadAssets(file.path);
                 }}
+                onDoubleClick={() => handleDoubleClick(file)}
                 draggable={isImage && !file.isFolder} 
                 onDragStart={(e) => {
                   if (isImage && !file.isFolder) {
                     e.dataTransfer.setData('imageSrc', `/assets/${file.path}`);
                   }
                 }}
+                title={isScript ? "더블 클릭하여 VS Code에서 열기" : file.name}
               >
                 {(() => {
                   if (file.isFolder) return <FolderIcon />;

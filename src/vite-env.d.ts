@@ -26,9 +26,6 @@ interface Window {
 
     // 프리뷰 창 열기
     openPreview: (width: number, height: number, pageId: string) => void;
-
-
-    // --- [Redux 상태 동기화 (Renderer <-> Main)] ---
     
     // 1. 액션 보내기 (Renderer -> Main)
     dispatch: (action: any) => void;
@@ -39,5 +36,11 @@ interface Window {
 
     // 3. 초기 상태 가져오기 (앱 시작 시 동기화)
     getInitialState: () => Promise<any>;
+
+    openInVSCode: (path: string) => Promise<void>;
+
+    getFonts: () => Promise<any[]>;
+    
+    fetchUrl: (url: string) => Promise<string>;
   }
 }

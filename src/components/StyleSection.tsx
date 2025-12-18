@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Trash2, Edit2 } from "lucide-react";
+import { Trash2, Edit2, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import StyleRow from "./StyleRow";
 import { toKebabCase, toCamelCase } from "../utils/styleUtils";
 import { INTERNAL_PROPS } from "../constants";
@@ -16,6 +16,7 @@ interface StyleSectionProps {
   ) => void;
   onDeleteSection?: () => void;
   onRename?: (newName: string) => void;
+  fontOptions?: string[]; // [추가] 폰트 목록 전달받을 Prop 추가
 }
 
 export default function StyleSection({
@@ -26,7 +27,9 @@ export default function StyleSection({
   onUpdate,
   onDeleteSection,
   onRename,
+  fontOptions = [], // [추가] 기본값 설정
 }: StyleSectionProps) {
+  const [isOpen, setIsOpen] = useState(true); // 섹션 접기/펴기 상태
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(initialLabel || "");
   const newKeyInputRef = useRef<HTMLDivElement>(null);
@@ -37,12 +40,10 @@ export default function StyleSection({
     {}
   );
 
-  // 1. 초기 로드 및 Redux 변경 시 순서 동기화 (단, _keysOrder가 있다면 우선순위)
+  // 1. 초기 로드 및 Redux 변경 시 순서 동기화
   useEffect(() => {
-    // styles 객체에 저장된 순서 메타데이터(_keysOrder)가 있다면 그것을 사용
     const savedOrder = styles._keysOrder as string[] | undefined;
 
-    // 현재 유효한 스타일 키 목록
     const currentKeys = Object.keys(styles).filter(
       (key) =>
         !INTERNAL_PROPS.includes(key) &&
@@ -51,14 +52,11 @@ export default function StyleSection({
     );
 
     setOrderedKeys((prev) => {
-      // 저장된 순서가 있다면 그것을 기반으로 정렬
       let baseOrder =
         savedOrder && Array.isArray(savedOrder) ? savedOrder : prev;
 
-      // 1. 유효하지 않은 키 제거
       const nextOrder = baseOrder.filter((k) => currentKeys.includes(k));
 
-      // 2. 누락된 키(새로 추가된 키 등) 추가
       currentKeys.forEach((k) => {
         if (!nextOrder.includes(k)) {
           nextOrder.push(k);
@@ -74,26 +72,28 @@ export default function StyleSection({
     newKey: string,
     newValue: string
   ) => {
-    const camelNew = toCamelCase(newKey.trim());
-    const camelOld = oldKey ? toCamelCase(oldKey.trim()) : "";
 
-    // 키 변경 시 로컬 순서 즉시 업데이트
+    const rawOld = oldKey ? oldKey.trim() : "";
+    const camelNew = toCamelCase(newKey.trim());
+
     let newOrderedKeys = [...orderedKeys];
-    if (camelOld && camelNew && camelOld !== camelNew) {
-      newOrderedKeys = newOrderedKeys.map((k) =>
-        k === camelOld ? camelNew : k
-      );
+
+    if (rawOld && camelNew && rawOld !== camelNew) {
+      newOrderedKeys = newOrderedKeys.map((k) => (k === rawOld ? camelNew : k));
       setOrderedKeys(newOrderedKeys);
-    } else if (!camelOld && camelNew) {
+    } else if (!rawOld && camelNew) {
+      // 새 키 추가
       if (!newOrderedKeys.includes(camelNew)) newOrderedKeys.push(camelNew);
       setOrderedKeys(newOrderedKeys);
     }
 
     const updates: any = {};
-    if (camelOld && camelOld !== camelNew) updates[camelOld] = undefined;
-    updates[camelNew] = newValue;
 
-    // [중요] 순서 정보를 함께 저장 (_keysOrder)
+    if (rawOld && rawOld !== camelNew) {
+      updates[rawOld] = undefined;
+    }
+
+    updates[camelNew] = newValue;
     updates["_keysOrder"] = newOrderedKeys;
 
     onUpdate(updates, path, false);
@@ -111,6 +111,17 @@ export default function StyleSection({
     setIsEditing(false);
   };
 
+  const handleAddProperty = () => {
+    // 빈 속성 추가 (UX를 위해 빈 행을 강제로 렌더링하거나 포커스 이동)
+    // 여기서는 onCommit을 통해 추가되므로 별도 로직 불필요, UI에서 입력 유도
+    setIsOpen(true);
+    if (newKeyInputRef.current) {
+      // newKeyInputRef 내부의 input을 찾아 포커스 (StyleRow 구현에 따라 다름)
+      const input = newKeyInputRef.current.querySelector("input");
+      if (input) input.focus();
+    }
+  };
+
   const getRowKeyRef = (key: string) => {
     if (!rowKeyRefs.current[key]) {
       rowKeyRefs.current[key] = React.createRef();
@@ -120,9 +131,17 @@ export default function StyleSection({
 
   return (
     <div className="mb-6 relative group/section">
+      {/* Header */}
       <div className="flex items-center justify-between mb-1 border-b border-gray-100 pb-1 h-7">
-        {isEditing ? (
-          <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="text-gray-400 hover:text-gray-600 focus:outline-none"
+          >
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+
+          {isEditing ? (
             <input
               type="text"
               value={editValue}
@@ -132,73 +151,102 @@ export default function StyleSection({
               className="text-xs border rounded px-1 py-0.5 w-full focus:outline-blue-500 font-mono"
               autoFocus
             />
-          </div>
-        ) : (
-          <div className="text-xs font-bold text-gray-600 flex items-center gap-2">
-            {title}
-            {onRename && (
-              <button
-                onClick={() => {
+          ) : (
+            <div
+              className="text-xs font-bold text-gray-600 flex items-center gap-2 cursor-pointer"
+              onDoubleClick={() => {
+                if (onRename) {
                   setEditValue(initialLabel || "");
                   setIsEditing(true);
-                }}
-                className="opacity-0 group-hover/section:opacity-100 text-gray-400 hover:text-blue-500 p-0.5 rounded transition-opacity"
-                title="Rename selector"
+                }
+              }}
+            >
+              {title}
+              {onRename && (
+                <button
+                  onClick={() => {
+                    setEditValue(initialLabel || "");
+                    setIsEditing(true);
+                  }}
+                  className="opacity-0 group-hover/section:opacity-100 text-gray-400 hover:text-blue-500 p-0.5 rounded transition-opacity"
+                  title="Rename selector"
+                >
+                  <Edit2 size={10} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {!isEditing && (
+          <div className="flex items-center opacity-0 group-hover/section:opacity-100 transition-opacity">
+            <button
+              onClick={handleAddProperty}
+              className="p-1 text-gray-400 hover:text-blue-600 rounded"
+              title="Add Property"
+            >
+              <Plus size={12} />
+            </button>
+            {onDeleteSection && (
+              <button
+                onClick={onDeleteSection}
+                className="p-1 text-gray-400 hover:text-red-500 rounded ml-1"
+                title="Delete this selector block"
               >
-                <Edit2 size={10} />
+                <Trash2 size={12} />
               </button>
             )}
           </div>
         )}
-
-        {!isEditing && onDeleteSection && (
-          <button
-            onClick={onDeleteSection}
-            className="opacity-0 group-hover/section:opacity-100 text-gray-400 hover:text-red-500 p-0.5 rounded transition-opacity"
-            title="Delete this selector block"
-          >
-            <Trash2 size={12} />
-          </button>
-        )}
       </div>
 
-      <div className="pl-2 border-l-2 border-gray-100 group-hover/section:border-blue-200 transition-colors">
-        {orderedKeys.map((key, index) => {
-          const value = styles[key];
-          if (value === undefined) return null;
-          const displayLabel = toKebabCase(key);
+      {/* Rows */}
+      {isOpen && (
+        <div className="pl-2 border-l-2 border-gray-100 group-hover/section:border-blue-200 transition-colors">
+          {orderedKeys.length === 0 && (
+            <div className="text-[10px] text-gray-300 italic pl-1 mb-1">
+              No styles
+            </div>
+          )}
+          {orderedKeys.map((key, index) => {
+            const value = styles[key];
+            if (value === undefined) return null;
+            const displayLabel = toKebabCase(key);
 
-          const nextRef =
-            index < orderedKeys.length - 1
-              ? getRowKeyRef(orderedKeys[index + 1])
-              : newKeyInputRef;
+            const nextRef =
+              index < orderedKeys.length - 1
+                ? getRowKeyRef(orderedKeys[index + 1])
+                : newKeyInputRef;
 
-          return (
+            return (
+              <StyleRow
+                key={`row-${key}`}
+                propKey={displayLabel}
+                propValue={value as string}
+                onCommit={handleCommitStyle}
+                onDelete={handleDeleteStyle}
+                inputRef={getRowKeyRef(key)}
+                nextKeyInputRef={nextRef}
+                fontOptions={fontOptions} // [추가] 각 StyleRow에 fontOptions 전달
+              />
+            );
+          })}
+
+          <div className="border-t border-gray-100 border-dashed pt-1 mt-1">
             <StyleRow
-              key={`row-${key}`} // 고유 key 사용으로 컴포넌트 재생성 방지
-              propKey={displayLabel}
-              propValue={value as string}
+              key="new-row"
+              propKey=""
+              propValue=""
               onCommit={handleCommitStyle}
-              onDelete={handleDeleteStyle}
-              inputRef={getRowKeyRef(key)}
-              nextKeyInputRef={nextRef}
+              onDelete={() => {}}
+              isNew={true}
+              nextKeyInputRef={newKeyInputRef}
+              inputRef={newKeyInputRef}
+              fontOptions={fontOptions} // [추가] 새 입력창에도 fontOptions 전달
             />
-          );
-        })}
-
-        <div className="border-t border-gray-100 border-dashed pt-1 mt-1">
-          <StyleRow
-            key="new-row"
-            propKey=""
-            propValue=""
-            onCommit={handleCommitStyle}
-            onDelete={() => {}}
-            isNew={true}
-            nextKeyInputRef={newKeyInputRef}
-            inputRef={newKeyInputRef}
-          />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
