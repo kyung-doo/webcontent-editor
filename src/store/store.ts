@@ -14,8 +14,7 @@ export const store = configureStore({
     canvas: canvasReducer,    // View
     font: fontSlice
   },
-  middleware: (getDefaultMiddleware) => 
-    getDefaultMiddleware().concat(syncMiddleware),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(syncMiddleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

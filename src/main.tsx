@@ -10,6 +10,7 @@ import { ModalProvider } from "./context/ModalContext.tsx";
 import App from "./App.tsx";
 import Preview from "./pages/Preview.tsx";
 import "./index.css";
+import { setFonts } from "./store/fontSlice.ts";
 
 function StateSynchronizer({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch();
@@ -45,8 +46,7 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
                 canvasSettings: wholeState.canvas.canvasSettings,
                 selectedIds: [],
                 selectedElementId: null,
-                activeContainerId:
-                  wholeState.canvas.activeContainerId || "root",
+                activeContainerId: wholeState.canvas.activeContainerId || "root",
                 currentTool: "select",
                 clipboard: [],
               })
@@ -62,13 +62,19 @@ function StateSynchronizer({ children }: { children: React.ReactNode }) {
               dispatch(setActivePage(wholeState.page.activePageId));
             }
           }
+
+          // 폰트 데이터 복구
+          if(wholeState.font) {
+            if(wholeState.font.fonts) {
+              dispatch(setFonts(wholeState.font.fonts));
+            }
+          }
+
         }
       });
 
-      // 2. 실시간 동기화
+      // 실시간 동기화
       const cleanup = electronAPI.onDispatch((action: any) => {
-        // [중요] Electron에서 온 액션임을 표시하여 무한 루프 방지
-        // store.ts의 미들웨어가 이 플래그를 보고 재전송을 막습니다.
         dispatch({
           ...action,
           meta: { ...action.meta, fromElectron: true },

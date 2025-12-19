@@ -43,6 +43,10 @@ export const fontSlice = createSlice({
     setSearchTerm: (state, action: PayloadAction<string>) => {
       state.searchTerm = action.payload;
     },
+
+    setFonts: (state, action: PayloadAction<Font[]>) => {
+      state.fonts = [...action.payload];
+    },
     
     // [추가] 폰트 목록에 새 폰트 추가
     addFont: (state, action: PayloadAction<Font>) => {
@@ -74,7 +78,8 @@ export const {
   setPreviewFont, 
   setSearchTerm, 
   addFont, 
-  removeFont 
+  removeFont,
+  setFonts
 } = fontSlice.actions;
 
 export default fontSlice.reducer;
