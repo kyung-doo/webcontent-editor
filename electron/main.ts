@@ -7,6 +7,7 @@ import installExtension, {
 } from "electron-devtools-installer";
 import { mainStore } from "./store";
 import { exec } from "child_process";
+import { pathToFileURL } from "url";
 
 // ----------------------------------------------------------------------
 // 1. 전역 변수 & 유틸리티
@@ -57,6 +58,7 @@ async function createMainWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webSecurity: false,
     },
   });
 
@@ -98,6 +100,7 @@ function createPreviewWindow(width: number, height: number, pageId?: string) {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webSecurity: false,
     },
   });
 
@@ -253,6 +256,14 @@ function registerIpcHandlers() {
       
       request.end();
     });
+  });
+
+  ipcMain.handle("get-assets-base-url", () => {
+    const assetsRoot = isDev
+      ? path.join(process.cwd(), "public/assets")
+      : path.join(process.resourcesPath, "assets");
+    
+    return pathToFileURL(assetsRoot).href;
   });
   
 }

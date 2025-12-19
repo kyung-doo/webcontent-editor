@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "chcp 65001 && vite",
     "build": "chcp 65001 && tsc && vite build && electron-builder",
+    "build:mac": "tsc && vite build && electron-builder --mac", 
     "preview": "vite preview"
   },
   "dependencies": {
@@ -34,10 +35,23 @@
     "vite-plugin-electron-renderer": "^0.14.6"
   },
   "build": {
+    "asar": false,
     "appId": "com.example.visualbuilder", 
     "productName": "MyVisualBuilder",
     "directories": {
       "output": "release"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "contents": [
+        { "x": 410, "y": 150, "type": "link", "path": "/Applications" },
+        { "x": 130, "y": 150, "type": "file" }
+      ]
     },
     "files": [
       "dist/**/*",

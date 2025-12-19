@@ -16,7 +16,7 @@ interface StyleSectionProps {
   ) => void;
   onDeleteSection?: () => void;
   onRename?: (newName: string) => void;
-  fontOptions?: string[]; // [추가] 폰트 목록 전달받을 Prop 추가
+  fontOptions?: string[];
 }
 
 export default function StyleSection({
@@ -27,20 +27,18 @@ export default function StyleSection({
   onUpdate,
   onDeleteSection,
   onRename,
-  fontOptions = [], // [추가] 기본값 설정
+  fontOptions = [],
 }: StyleSectionProps) {
-  const [isOpen, setIsOpen] = useState(true); // 섹션 접기/펴기 상태
+  const [isOpen, setIsOpen] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(initialLabel || "");
   const newKeyInputRef = useRef<HTMLDivElement>(null);
 
-  // [순서 유지 상태]
   const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
   const rowKeyRefs = useRef<Record<string, React.RefObject<HTMLDivElement>>>(
     {}
   );
 
-  // 1. 초기 로드 및 Redux 변경 시 순서 동기화
   useEffect(() => {
     const savedOrder = styles._keysOrder as string[] | undefined;
 
@@ -72,25 +70,36 @@ export default function StyleSection({
     newKey: string,
     newValue: string
   ) => {
-
     const rawOld = oldKey ? oldKey.trim() : "";
     const camelNew = toCamelCase(newKey.trim());
 
+    // [수정] oldKey(케밥케이스, 예: background-color)를 카멜케이스(예: backgroundColor)로 변환
+    const camelOld = toCamelCase(rawOld);
+
     let newOrderedKeys = [...orderedKeys];
 
-    if (rawOld && camelNew && rawOld !== camelNew) {
-      newOrderedKeys = newOrderedKeys.map((k) => (k === rawOld ? camelNew : k));
+    // [수정] 비교 로직 개선: rawOld !== camelNew 대신 camelOld !== camelNew 사용
+    if (rawOld && camelNew && camelOld !== camelNew) {
+      // [수정] 배열 내 키가 rawOld(케밥) 또는 camelOld(카멜)과 일치하면 교체
+      newOrderedKeys = newOrderedKeys.map((k) =>
+        k === rawOld || k === camelOld ? camelNew : k
+      );
       setOrderedKeys(newOrderedKeys);
     } else if (!rawOld && camelNew) {
-      // 새 키 추가
       if (!newOrderedKeys.includes(camelNew)) newOrderedKeys.push(camelNew);
       setOrderedKeys(newOrderedKeys);
     }
 
     const updates: any = {};
 
-    if (rawOld && rawOld !== camelNew) {
-      updates[rawOld] = undefined;
+    // [수정] 실제 속성 제거 시에도 카멜케이스 비교가 더 안전할 수 있으나,
+    // 보통 삭제는 rawOld(기존 키) 기준으로 진행합니다.
+    // 단, rawOld가 camelNew와 같다면(단순 값 변경 등) 삭제하지 않습니다.
+    if (rawOld && camelOld !== camelNew) {
+      // rawOld가 kebab-case여도 스타일 객체가 camelCase라면 camelOld를 지워야 할 수 있습니다.
+      // 여기서는 확실하게 지우기 위해 둘 다 undefined 처리하거나, toCamelCase(rawOld)를 사용합니다.
+      updates[toCamelCase(rawOld)] = undefined;
+      // 만약 styles 객체가 kebab-case 키도 가지고 있다면 updates[rawOld] = undefined; 도 필요할 수 있습니다.
     }
 
     updates[camelNew] = newValue;
@@ -112,11 +121,8 @@ export default function StyleSection({
   };
 
   const handleAddProperty = () => {
-    // 빈 속성 추가 (UX를 위해 빈 행을 강제로 렌더링하거나 포커스 이동)
-    // 여기서는 onCommit을 통해 추가되므로 별도 로직 불필요, UI에서 입력 유도
     setIsOpen(true);
     if (newKeyInputRef.current) {
-      // newKeyInputRef 내부의 input을 찾아 포커스 (StyleRow 구현에 따라 다름)
       const input = newKeyInputRef.current.querySelector("input");
       if (input) input.focus();
     }
@@ -227,7 +233,7 @@ export default function StyleSection({
                 onDelete={handleDeleteStyle}
                 inputRef={getRowKeyRef(key)}
                 nextKeyInputRef={nextRef}
-                fontOptions={fontOptions} // [추가] 각 StyleRow에 fontOptions 전달
+                fontOptions={fontOptions}
               />
             );
           })}
@@ -242,7 +248,7 @@ export default function StyleSection({
               isNew={true}
               nextKeyInputRef={newKeyInputRef}
               inputRef={newKeyInputRef}
-              fontOptions={fontOptions} // [추가] 새 입력창에도 fontOptions 전달
+              fontOptions={fontOptions}
             />
           </div>
         </div>

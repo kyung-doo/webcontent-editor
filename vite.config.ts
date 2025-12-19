@@ -1,22 +1,25 @@
 import { defineConfig } from 'vite'
 import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
-import renderer from 'vite-plugin-electron-renderer' // 👈 import 추가
+import renderer from 'vite-plugin-electron-renderer'
 import react from '@vitejs/plugin-react'
 
+// https://vitejs.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     electron({
       main: {
+        // Electron 메인 프로세스 진입점
         entry: 'electron/main.ts',
       },
       preload: {
+        // 프리로드 스크립트 진입점
         input: 'electron/preload.ts',
       },
-      renderer: {}, // HMR 활성화 설정
+      renderer: {}, // 렌더러 프로세스 HMR 활성화
     }),
-    // 👇 [중요] 이 플러그인이 있어야 HMR이 안정적으로 작동합니다.
     renderer(), 
   ],
 })

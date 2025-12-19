@@ -21,25 +21,6 @@ interface StyleRowProps {
   fontOptions?: string[];
 }
 
-const setCursorToEnd = (element: HTMLElement) => {
-  const range = document.createRange();
-  const selection = window.getSelection();
-
-  if (element.childNodes.length > 0) {
-    if (element.firstChild && element.firstChild.nodeType === Node.TEXT_NODE) {
-      range.setStart(element.firstChild, element.innerText.length);
-    } else {
-      range.setStart(element, 0);
-    }
-  } else {
-    range.setStart(element, 0);
-  }
-
-  range.collapse(true);
-  selection?.removeAllRanges();
-  selection?.addRange(range);
-};
-
 export default function StyleRow({
   propKey,
   propValue,
@@ -50,13 +31,34 @@ export default function StyleRow({
   inputRef,
   fontOptions = [],
 }: StyleRowProps) {
-
   const [key, setKey] = useState(propKey);
   const [val, setVal] = useState(propValue || "");
 
   const keyInputRef = inputRef || useRef<HTMLDivElement>(null);
   const valueInputRef = useRef<HTMLDivElement>(null);
   const isFocusTransferring = useRef(false);
+
+  const setCursorToEnd = (element: HTMLElement) => {
+    const range = document.createRange();
+    const selection = window.getSelection();
+
+    if (element.childNodes.length > 0) {
+      if (
+        element.firstChild &&
+        element.firstChild.nodeType === Node.TEXT_NODE
+      ) {
+        range.setStart(element.firstChild, element.innerText.length);
+      } else {
+        range.setStart(element, 0);
+      }
+    } else {
+      range.setStart(element, 0);
+    }
+
+    range.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  };
 
   useEffect(() => {
     setKey(propKey);
@@ -78,33 +80,33 @@ export default function StyleRow({
   }, [valueInputRef]);
 
   // Value 필드에서 Enter/Tab 처리: Commit 후 다음 Key 필드로 포커스 이동
-  const handleValueEnter = useCallback((finalVal?: string) => {
-    const valueToCommit = finalVal !== undefined ? finalVal : val;
-    if (key && valueToCommit) {
-      onCommit(propKey, key, valueToCommit);
-    } else if (!key && !valueToCommit && !isNew) {
-       onDelete(propKey);
-    }
-    
-    if (isNew) {
-      setKey("");
-      setVal("");
-    }
-    
-    // Slight delay to allow DOM updates
-    setTimeout(() => {
+  const handleValueEnter = useCallback(
+    (finalVal?: string, noFocus?: boolean) => {
+      const valueToCommit = finalVal !== undefined ? finalVal : val;
+      if (key && valueToCommit) {
+        onCommit(propKey, key, valueToCommit);
+      } else if (!key && !valueToCommit && !isNew) {
+        onDelete(propKey);
+      }
+
+      if (isNew) {
+        setKey("");
+        setVal("");
+      }
+      if (noFocus) return;
+      // Slight delay to allow DOM updates
+      setTimeout(() => {
         if (nextKeyInputRef?.current) {
-            nextKeyInputRef.current.focus();
-            setCursorToEnd(nextKeyInputRef.current);
+          nextKeyInputRef.current.focus();
+          setCursorToEnd(nextKeyInputRef.current);
         }
-    }, 10);
-    
-  }, [key, val, propKey, onCommit, onDelete, isNew, nextKeyInputRef]);
+      }, 10);
+    },
+    [key, val, propKey, onCommit, onDelete, isNew, nextKeyInputRef]
+  );
 
   const commitChange = useCallback(() => {
-    if (isFocusTransferring.current) {
-      return;
-    }
+    if (isFocusTransferring.current) return;
 
     if (key && val) {
       if (key !== propKey || val !== propValue) {
@@ -119,13 +121,12 @@ export default function StyleRow({
     }
   }, [key, val, propKey, propValue, onCommit, isNew, onDelete]);
 
-  const isFontFamily = 
-    key.toLowerCase() === "fontfamily" || 
-    key.toLowerCase() === "font-family";
-    
-  const valueOptions = isFontFamily 
-    ? fontOptions 
-    : (PROPERTY_VALUES[toCamelCase(key)] || []);
+  const isFontFamily =
+    key.toLowerCase() === "fontfamily" || key.toLowerCase() === "font-family";
+
+  const valueOptions = isFontFamily
+    ? fontOptions
+    : PROPERTY_VALUES[toCamelCase(key)] || [];
 
   const isColorProp = useMemo(() => {
     const k = key.toLowerCase();
@@ -166,6 +167,12 @@ export default function StyleRow({
   );
 
   const handleMultiColorChange = (oldColor: string, newColor: string) => {
+    if (
+      valueInputRef.current &&
+      document.activeElement === valueInputRef.current
+    ) {
+      return;
+    }
     // 특수문자 이스케이프 처리
     const escapedOld = oldColor.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
     const startBoundary = /^[a-zA-Z0-9_]/.test(oldColor) ? "\\b" : "";
@@ -187,7 +194,13 @@ export default function StyleRow({
         <AutocompleteInput
           value={key}
           onChange={setKey}
-          onBlur={commitChange}
+          onBlur={() => {
+            commitChange();
+            setTimeout(() => {
+              console.log(valueInputRef.current)
+              valueInputRef.current?.focus()
+            }, 1000);
+          }}
           onEnter={handleKeyEnter}
           options={CSS_PROPERTIES}
           placeholder={isNew ? "property" : ""}

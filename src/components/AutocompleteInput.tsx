@@ -1,17 +1,16 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { Plus, Trash2 } from "lucide-react";
+
 
 export interface AutocompleteProps {
   value: string;
   onChange: (val: string) => void;
-  onEnter?: (val?: string) => void;
+  onEnter?: (val?: string, noFocus?: boolean) => void;
   options: string[];
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
   inputRef?: React.RefObject<HTMLDivElement>;
   onBlur?: () => void;
-  /** 빈 값일 때도 포커스 시 자동으로 목록을 열지 여부 */
   openOnEmpty?: boolean;
 }
 
@@ -25,14 +24,16 @@ const AutocompleteInput = ({
   className,
   inputRef,
   onBlur,
-  openOnEmpty = false, // 기본값 false (Key 필드 등은 입력 시에만 열리게 유지)
+  openOnEmpty = false,
 }: AutocompleteProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  
+  // useEffect에 의한 DOM 덮어쓰기를 방지하기 위한 플래그
+  const isInternalChange = useRef(false);
 
   const filteredOptions = useMemo(() => {
     const safeValue = value || "";
-    // openOnEmpty가 true이고 값이 비어있으면 모든 옵션 반환
     if (openOnEmpty && safeValue === "") {
       return options;
     }
@@ -45,6 +46,7 @@ const AutocompleteInput = ({
   const internalRef = useRef<HTMLDivElement>(null);
   const finalInputRef = inputRef || internalRef;
 
+  // 초기 렌더링 시에만 dangerouslySetInnerHTML 사용
   const initialContent = useMemo(() => ({ __html: value }), []);
 
   const adjustHeight = () => {
@@ -60,7 +62,14 @@ const AutocompleteInput = ({
     adjustHeight();
   }, []);
 
+  // 외부 value prop 변경 시 DOM 업데이트
   useEffect(() => {
+    // 내부에서 변경 중이라면 DOM을 덮어쓰지 않음 (커서 튐 방지)
+    if (isInternalChange.current) {
+      isInternalChange.current = false;
+      return;
+    }
+
     if (finalInputRef.current && finalInputRef.current.innerText !== value) {
       finalInputRef.current.innerText = value;
       adjustHeight();
@@ -68,14 +77,12 @@ const AutocompleteInput = ({
   }, [value]);
 
   const handleFocus = () => {
-    // 포커스 시 빈 값이어도 열리도록 설정된 경우 목록 오픈
     if (openOnEmpty) {
       setIsOpen(true);
     }
   };
 
   const handleClick = () => {
-    // 클릭 시에도 동일하게 동작 (이미 포커스된 상태에서 클릭 시 등)
     if (openOnEmpty) {
       setIsOpen(true);
     }
@@ -96,7 +103,6 @@ const AutocompleteInput = ({
     onChange(newValue);
     adjustHeight();
 
-    // openOnEmpty가 true면 텍스트 길이가 0이어도 오픈
     if (newValue.length > 0 || openOnEmpty) {
       setIsOpen(true);
     } else {
@@ -127,10 +133,80 @@ const AutocompleteInput = ({
       }
     }
 
+    // [수정됨] 숫자 증감 로직: 선택된 텍스트가 "숫자" 또는 "숫자+단위"일 때 동작
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const selection = window.getSelection();
+      
+      // 1. 셀렉션이 있고, 실제로 텍스트가 선택된 상태(!isCollapsed)인지 확인
+      if (selection && !selection.isCollapsed && el) {
+        const selectedText = selection.toString();
+        
+        // 정규식: 숫자(소수점 포함) + 선택적 단위(알파벳, %)
+        const numberPattern = /(-?\d+(?:\.\d+)?)([a-z%]*)/i;
+        const match = selectedText.match(numberPattern);
+
+        if (match) {
+          e.preventDefault(); // 기본 커서 이동 방지
+
+          const fullMatch = match[0]; // 매칭된 전체 문자열 (예: "10px", "0.5")
+          const numStr = match[1];    // 숫자 부분 (예: "10", "0.5")
+          const unit = match[2] || ""; // 단위 부분 (예: "px", "")
+          
+          const currentNum = parseFloat(numStr);
+          const isShift = e.shiftKey;
+          const step = isShift ? 10 : 1;
+          const direction = e.key === "ArrowUp" ? 1 : -1;
+
+          // 부동소수점 연산 오차 방지
+          let newNum = currentNum + direction * step;
+          newNum = Math.round(newNum * 1000) / 1000;
+          
+          const newNumStr = newNum.toString();
+          const newValStr = newNumStr + unit;
+
+          // 선택된 텍스트 내에서 매칭된 부분만 새로운 값으로 교체 (주변 문자 보존)
+          const newText = selectedText.replace(fullMatch, newValStr);
+
+          // DOM 업데이트 전 플래그 설정 (useEffect가 덮어쓰지 않도록)
+          isInternalChange.current = true;
+
+          // 3. 즉시 DOM 업데이트 (execCommand를 사용하여 Undo/Redo 스택 보존)
+          // execCommand 실행 시 input 이벤트가 발생하여 handleInput -> onChange가 호출됨
+          document.execCommand("insertText", false, newText);
+
+          // 5. 셀렉션(드래그) 상태 복구
+          // [중요] execCommand 이후 DOM이 변경되었으므로 selection 객체를 다시 가져와야 안전함
+          const afterSelection = window.getSelection();
+          if (!afterSelection) return;
+
+          const focusNode = afterSelection.focusNode;
+          const focusOffset = afterSelection.focusOffset; 
+
+          if (focusNode) {
+             const startOffset = focusOffset - newText.length;
+             // startOffset이 유효한지 확인 후 선택 영역 설정
+             if (startOffset >= 0) {
+                 const newRange = document.createRange();
+                 newRange.setStart(focusNode, startOffset);
+                 newRange.setEnd(focusNode, focusOffset);
+                 afterSelection.removeAllRanges();
+                 afterSelection.addRange(newRange);
+             }
+          }
+          
+          if (onEnter) {
+            onEnter(el.innerText.replace(/\n/g, ""), true);
+          }
+
+          return; // 숫자 처리가 되었으므로 리스트 네비게이션 로직 등은 건너뜀
+        }
+      }
+    }
+
+    // 아래는 기존 리스트 네비게이션 로직 유지
     if (!isOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        // openOnEmpty가 true면 빈 값에서도 화살표로 오픈 가능
         if (value.length > 0 || openOnEmpty) setIsOpen(true);
       } else if (e.key === "Enter") {
         setIsOpen(false);
@@ -141,17 +217,18 @@ const AutocompleteInput = ({
 
     // 드롭다운이 열려 있을 때
     if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (filteredOptions.length > 0)
+      if (filteredOptions.length > 0){
+        e.preventDefault();
         setSelectedIndex((prev) => (prev + 1) % filteredOptions.length);
+      }
     } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (filteredOptions.length > 0)
+      if (filteredOptions.length > 0) {
+        e.preventDefault();
         setSelectedIndex(
           (prev) => (prev - 1 + filteredOptions.length) % filteredOptions.length
         );
+      }
     } else if (e.key === "Enter") {
-      // 엔터: 선택 수행
       if (filteredOptions.length > 0) {
         handleSelect(filteredOptions[selectedIndex], true);
       } else {
@@ -172,7 +249,6 @@ const AutocompleteInput = ({
 
   const handleSelect = (opt: string, shouldRefocus = true) => {
     if (!shouldRefocus) {
-      // [Tab 키 처리]
       setIsOpen(false);
       setTimeout(() => {
         onChange(opt);
@@ -184,13 +260,11 @@ const AutocompleteInput = ({
     onChange(opt);
     setIsOpen(false);
 
-    // DOM 업데이트
     if (finalInputRef.current) {
       if (shouldRefocus) {
-        finalInputRef.current.innerText = '';
+        finalInputRef.current.innerText = "";
         adjustHeight();
 
-        // 포커스 복구
         const range = document.createRange();
         const sel = window.getSelection();
         range.selectNodeContents(finalInputRef.current);
@@ -211,8 +285,8 @@ const AutocompleteInput = ({
         contentEditable="true"
         onInput={handleInput}
         onBlur={handleBlur}
-        onFocus={handleFocus} // 포커스 핸들러
-        onClick={handleClick} // 클릭 핸들러 추가 (포커스된 상태 클릭 대응)
+        onFocus={handleFocus}
+        onClick={handleClick}
         onKeyDown={handleKeyDown}
         data-placeholder={placeholder}
         autoFocus={autoFocus}

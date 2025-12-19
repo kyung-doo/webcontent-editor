@@ -86,6 +86,7 @@ const PickrWidget = ({ initialColor, onChange }: PickrWidgetProps) => {
           pcrButtonElement.style.position = 'relative';
           pcrButtonElement.style.top = '-2px';
           pcrButtonElement.style.border = 'solid 1px #333';
+          pcrButtonElement.tabIndex = -1;
       }
 
     return () => {

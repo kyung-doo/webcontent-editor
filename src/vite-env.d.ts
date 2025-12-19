@@ -42,5 +42,7 @@ interface Window {
     getFonts: () => Promise<any[]>;
     
     fetchUrl: (url: string) => Promise<string>;
+
+    getAssetsBaseUrl: () => Promise<string>;
   }
 }

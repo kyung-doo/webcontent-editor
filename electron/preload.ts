@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFonts: () => ipcRenderer.invoke("get-fonts"),
   fetchUrl: (url: string) => ipcRenderer.invoke("fetch-url", url),
 
+  getAssetsBaseUrl: () => ipcRenderer.invoke('get-assets-base-url'),
+
 })
